@@ -3,11 +3,12 @@ import math
 import os
 import random
 import struct
+import sys
 import wave
 from array import array
 
 SAMPLE_RATE = 44100
-MASTER_GAIN = 0.78
+MASTER_GAIN = 0.72
 TOTAL_BARS = 16
 
 SEMITONES = {
@@ -87,8 +88,11 @@ THEMES = {
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TIMBRE_ROOT = os.path.join(PROJECT_ROOT, "assets", "audio", "timbres", "preview_pack_v1")
+TIMBRE_ROOT_V2 = os.path.join(PROJECT_ROOT, "assets", "audio", "timbres", "preview_pack_v2")
 CURRENT_PROFILE = "synth"
 SAMPLE_CACHE = {}
+GM_RENDER_CACHE = {}
+GM_SOUND_FONT = None
 SAMPLE_BANKS = {
     "ocarina": [
         {"note": "A3", "path": os.path.join(TIMBRE_ROOT, "vcsl", "ocarina", "StdOcarina_Sus_A3.wav")},
@@ -127,12 +131,49 @@ SAMPLE_BANKS = {
     ],
 }
 
+MELTYSYNTH_ROOT = os.path.join(PROJECT_ROOT, "tools", "vendor", "py_meltysynth")
+if MELTYSYNTH_ROOT not in sys.path:
+    sys.path.insert(0, MELTYSYNTH_ROOT)
+
+try:
+    import meltysynth as ms
+except Exception:
+    ms = None
+
+GM_SOUND_FONT_PATH = os.path.join(TIMBRE_ROOT_V2, "soundfonts", "GeneralUser-GS.sf2")
+GM_PROGRAMS = {
+    "qi_pad": 48,
+    "qi_lead": 73,
+    "qi_support": 49,
+    "combo_pad": 49,
+    "combo_lead": 29,
+    "combo_support": 48,
+    "mana_pad": 89,
+    "mana_lead": 81,
+    "mana_arp": 98,
+    "mana_support": 89,
+    "balance_pad": 49,
+    "balance_lead": 68,
+    "balance_support": 48,
+}
+
 
 def note_to_freq(note: str) -> float:
     name = note[:-1]
     octave = int(note[-1])
     semitone = SEMITONES[name] + (octave - 4) * 12
     return 440.0 * (2.0 ** (semitone / 12.0))
+
+
+def note_to_midi(note: str) -> int:
+    name = note[:-1]
+    octave = int(note[-1])
+    semitone = SEMITONES[name] + (octave - 4) * 12
+    return 69 + semitone
+
+
+def is_gm_profile():
+    return CURRENT_PROFILE == "gm_v1"
 
 
 def is_sample_profile():
@@ -278,6 +319,81 @@ def render_sample_stack(bank_name, notes, duration, gain=1.0, attack=0.005, rele
     return out
 
 
+def ensure_gm_sound_font():
+    global GM_SOUND_FONT
+
+    if ms is None:
+        raise RuntimeError("py-meltysynth is unavailable")
+    if GM_SOUND_FONT is None:
+        GM_SOUND_FONT = ms.SoundFont.from_file(GM_SOUND_FONT_PATH)
+    return GM_SOUND_FONT
+
+
+def render_gm_event(program_key, notes, duration, velocity=90, release=0.2, gain=1.0, bank=0):
+    if isinstance(notes, str):
+        notes = [notes]
+
+    note_tuple = tuple(notes)
+    cache_key = (
+        program_key,
+        note_tuple,
+        round(duration, 4),
+        velocity,
+        round(release, 4),
+        round(gain, 4),
+        bank,
+    )
+    if cache_key in GM_RENDER_CACHE:
+        return GM_RENDER_CACHE[cache_key]
+
+    sound_font = ensure_gm_sound_font()
+    settings = ms.SynthesizerSettings(SAMPLE_RATE)
+    settings.block_size = 128
+    settings.maximum_polyphony = 96
+    settings.enable_reverb_and_chorus = True
+    synth = ms.Synthesizer(sound_font, settings)
+
+    synth.process_midi_message(0, 0xB0, 0x00, bank)
+    synth.process_midi_message(0, 0xC0, GM_PROGRAMS[program_key], 0)
+
+    midi_keys = [note_to_midi(note) for note in note_tuple]
+    on_samples = max(1, int(duration * SAMPLE_RATE))
+    off_samples = max(1, int(release * SAMPLE_RATE))
+    total_samples = on_samples + off_samples
+    left = ms.create_buffer(total_samples)
+    right = ms.create_buffer(total_samples)
+
+    for key in midi_keys:
+        synth.note_on(0, key, velocity)
+    synth.render(left, right, 0, on_samples)
+    for key in midi_keys:
+        synth.note_off(0, key)
+    synth.render(left, right, on_samples, off_samples)
+
+    mono = array("f", [0.0]) * total_samples
+    peak = 1e-6
+    for i in range(total_samples):
+        sample = (left[i] + right[i]) * 0.5 * gain
+        mono[i] = sample
+        peak = max(peak, abs(sample))
+
+    if peak > 0.92:
+        scale = 0.92 / peak
+        for i in range(total_samples):
+            mono[i] *= scale
+
+    GM_RENDER_CACHE[cache_key] = mono
+    return mono
+
+
+def render_gm_note(program_key, note, duration, velocity=90, release=0.2, gain=1.0, bank=0):
+    return render_gm_event(program_key, [note], duration, velocity=velocity, release=release, gain=gain, bank=bank)
+
+
+def render_gm_chord(program_key, notes, duration, velocity=84, release=0.28, gain=1.0, bank=0):
+    return render_gm_event(program_key, notes, duration, velocity=velocity, release=release, gain=gain, bank=bank)
+
+
 def env(progress, attack, decay, sustain_level, sustain_time, release):
     if progress < attack:
         return progress / max(attack, 1e-6)
@@ -392,53 +508,53 @@ def synth_pluck(freq, duration=0.18, brilliance=1.0):
     return out
 
 
-def synth_kick(duration=0.3, body=1.0):
+def synth_kick(duration=0.3, body=1.0, gain=1.0):
     samples = int(duration * SAMPLE_RATE)
     out = array("f", [0.0]) * samples
     for i in range(samples):
         t = i / SAMPLE_RATE
         freq = (145.0 * body) * (0.22 ** min(t / duration, 1.0)) + 38.0
-        amp = math.exp(-9.4 * t) * 0.82
+        amp = math.exp(-9.8 * t) * 0.68
         sample = math.sin(2 * math.pi * freq * t)
-        sample += math.sin(2 * math.pi * freq * 0.5 * t) * 0.18
-        sample += make_noise() * math.exp(-85.0 * t) * 0.025
-        out[i] = math.tanh(sample * 1.22) * amp * 0.46
+        sample += math.sin(2 * math.pi * freq * 0.5 * t) * 0.12
+        sample += make_noise() * math.exp(-90.0 * t) * 0.012
+        out[i] = math.tanh(sample * 0.92) * amp * 0.34 * gain
     return out
 
 
-def synth_tom(freq=120.0, duration=0.22):
+def synth_tom(freq=120.0, duration=0.22, gain=1.0):
     samples = int(duration * SAMPLE_RATE)
     out = array("f", [0.0]) * samples
     for i in range(samples):
         t = i / SAMPLE_RATE
-        amp = math.exp(-8.0 * t) * 0.3
+        amp = math.exp(-8.4 * t) * 0.22
         f = freq * (0.5 ** min(t / duration, 1.0)) + 40.0
-        sample = math.sin(2 * math.pi * f * t) + math.sin(2 * math.pi * f * 0.5 * t) * 0.25
-        out[i] = math.tanh(sample * 1.4) * amp
+        sample = math.sin(2 * math.pi * f * t) + math.sin(2 * math.pi * f * 0.5 * t) * 0.18
+        out[i] = math.tanh(sample * 1.02) * amp * gain
     return out
 
 
-def synth_snare(duration=0.17, brightness=1.0):
+def synth_snare(duration=0.17, brightness=1.0, gain=1.0):
     samples = int(duration * SAMPLE_RATE)
     out = array("f", [0.0]) * samples
     for i in range(samples):
         t = i / SAMPLE_RATE
-        amp = math.exp(-20.0 * t) * 0.24
-        noise = make_noise() * 0.85
-        tone = math.sin(2 * math.pi * 200.0 * t) * 0.18
-        out[i] = (noise * brightness + tone) * amp
+        amp = math.exp(-21.0 * t) * 0.18
+        noise = make_noise() * 0.68
+        tone = math.sin(2 * math.pi * 190.0 * t) * 0.14
+        out[i] = (noise * brightness + tone) * amp * gain
     return out
 
 
-def synth_hat(duration=0.07, brightness=1.0):
+def synth_hat(duration=0.07, brightness=1.0, gain=1.0):
     samples = int(duration * SAMPLE_RATE)
     out = array("f", [0.0]) * samples
     for i in range(samples):
         t = i / SAMPLE_RATE
-        amp = math.exp(-48.0 * t) * 0.12
-        noise = make_noise() * 0.82
-        metal = math.sin(2 * math.pi * 7200.0 * brightness * t) * 0.22
-        out[i] = (noise + metal) * amp
+        amp = math.exp(-52.0 * t) * 0.07
+        noise = make_noise() * 0.64
+        metal = math.sin(2 * math.pi * 6200.0 * brightness * t) * 0.12
+        out[i] = (noise + metal) * amp * gain
     return out
 
 
@@ -483,7 +599,11 @@ def build_qi_theme(left, right, spec):
 
     for bar in range(TOTAL_BARS):
         freqs = [note_to_freq(note) for note in spec["chords"][bar]]
-        add_note(left, right, beat_seconds, bar * 4, synth_pad(freqs, beat_seconds * 4, spec["pad_tone"]), pan=(-0.05 if bar % 2 == 0 else 0.05))
+        if is_gm_profile():
+            pad_sound = render_gm_chord("qi_pad", spec["chords"][bar], beat_seconds * 3.65, velocity=76, release=0.36, gain=0.56)
+        else:
+            pad_sound = synth_pad(freqs, beat_seconds * 4, spec["pad_tone"])
+        add_note(left, right, beat_seconds, bar * 4, pad_sound, pan=(-0.05 if bar % 2 == 0 else 0.05))
 
         root = note_to_freq(spec["chords"][bar][0])
         bass_hits = [0.0, 1.5, 2.0]
@@ -504,43 +624,49 @@ def build_qi_theme(left, right, spec):
         for n_idx, (beat, dur_beats) in enumerate(pattern):
             note = motif[(bar * 2 + n_idx) % len(motif)]
             duration = beat_seconds * dur_beats
-            if is_sample_profile():
+            if is_gm_profile():
+                sound = render_gm_note("qi_lead", note, duration, velocity=94, release=0.22, gain=0.84)
+            elif is_sample_profile():
                 sound = render_sample_voice("ocarina", target_note=note, duration=duration, gain=0.5, attack=0.012, release=0.1)
             else:
                 sound = synth_lead(note_to_freq(note), duration, tone=spec["lead_tone"], style="pure", vibrato_depth=0.0007, vibrato_rate=4.4)
             add_note(left, right, beat_seconds, bar * 4 + beat, sound, pan=random.uniform(-0.04, 0.04))
 
         if bar >= 8:
-            support = [
-                note_to_freq(spec["counter"][bar % len(spec["counter"])]),
-                note_to_freq(spec["chords"][bar][2]),
-                note_to_freq(spec["chords"][bar][3]),
-            ]
-            add_note(left, right, beat_seconds, bar * 4, synth_support(support, beat_seconds * 4, tone=0.6, level=1.35), pan=0.0)
+            if is_gm_profile():
+                support_sound = render_gm_chord("qi_support", [spec["chords"][bar][0], spec["chords"][bar][2], spec["chords"][bar][3]], beat_seconds * 3.6, velocity=74, release=0.42, gain=0.52)
+            else:
+                support = [
+                    note_to_freq(spec["counter"][bar % len(spec["counter"])]),
+                    note_to_freq(spec["chords"][bar][2]),
+                    note_to_freq(spec["chords"][bar][3]),
+                ]
+                support_sound = synth_support(support, beat_seconds * 4, tone=0.6, level=1.35)
+            add_note(left, right, beat_seconds, bar * 4, support_sound, pan=0.0)
 
         for beat in [0.0, 2.0]:
             if is_sample_profile():
                 sound = render_sample_voice("frame_drum_low", duration=0.42, gain=0.78, attack=0.001, release=0.08)
             else:
-                sound = synth_kick(body=1.2)
+                sound = synth_kick(body=1.08, gain=0.52)
             add_note(left, right, beat_seconds, bar * 4 + beat, sound, pan=0.0)
         if bar in (3, 7, 11, 15):
             if is_sample_profile():
                 add_note(left, right, beat_seconds, bar * 4 + 2.0 + triplet, render_sample_voice("frame_drum_small", duration=0.2, gain=0.46, attack=0.001, release=0.05), pan=-0.1)
                 add_note(left, right, beat_seconds, bar * 4 + 2.0 + triplet * 2, render_sample_voice("frame_drum_small", duration=0.2, gain=0.52, attack=0.001, release=0.05), pan=0.1)
             else:
-                add_note(left, right, beat_seconds, bar * 4 + 2.0 + triplet, synth_tom(165.0), pan=-0.1)
-                add_note(left, right, beat_seconds, bar * 4 + 2.0 + triplet * 2, synth_tom(120.0), pan=0.1)
+                add_note(left, right, beat_seconds, bar * 4 + 2.0 + triplet, synth_tom(165.0, gain=0.4), pan=-0.1)
+                add_note(left, right, beat_seconds, bar * 4 + 2.0 + triplet * 2, synth_tom(120.0, gain=0.42), pan=0.1)
         if is_sample_profile():
             add_note(left, right, beat_seconds, bar * 4 + 3.0, render_sample_voice("frame_drum_low", duration=0.26, gain=0.36, attack=0.001, release=0.05), pan=0.0)
             if bar in (0, 4, 8, 12):
                 add_note(left, right, beat_seconds, bar * 4, render_sample_voice("gong", duration=1.25, gain=0.16, attack=0.002, release=0.3), pan=0.0)
         else:
-            add_note(left, right, beat_seconds, bar * 4 + 3.0, synth_snare(brightness=0.85), pan=0.0)
+            add_note(left, right, beat_seconds, bar * 4 + 3.0, synth_snare(brightness=0.78, gain=0.42), pan=0.0)
 
         if bar >= 4:
             for beat in [1.0, 1.5, 2.5, 3.5]:
-                add_note(left, right, beat_seconds, bar * 4 + beat, synth_hat(brightness=0.9), pan=random.uniform(-0.06, 0.06))
+                add_note(left, right, beat_seconds, bar * 4 + beat, synth_hat(brightness=0.78, gain=0.3), pan=random.uniform(-0.06, 0.06))
 
 
 def build_combo_theme(left, right, spec):
@@ -550,7 +676,11 @@ def build_combo_theme(left, right, spec):
     for bar in range(TOTAL_BARS):
         freqs = [note_to_freq(note) for note in spec["chords"][bar]]
         if bar % 4 in (0, 2):
-            add_note(left, right, beat_seconds, bar * 4, synth_pad(freqs, beat_seconds * 4, spec["pad_tone"]), pan=(-0.08 if bar % 2 == 0 else 0.08))
+            if is_gm_profile():
+                pad_sound = render_gm_chord("combo_pad", spec["chords"][bar], beat_seconds * 3.45, velocity=72, release=0.34, gain=0.44)
+            else:
+                pad_sound = synth_pad(freqs, beat_seconds * 4, spec["pad_tone"])
+            add_note(left, right, beat_seconds, bar * 4, pad_sound, pan=(-0.08 if bar % 2 == 0 else 0.08))
 
         root = note_to_freq(spec["chords"][bar][0])
         pair_phase = bar % 2
@@ -583,7 +713,11 @@ def build_combo_theme(left, right, spec):
                 style = "sharp"
                 tone = spec["lead_tone"]
             duration = beat_seconds * dur_beats
-            if is_sample_profile():
+            if is_gm_profile():
+                gain = 1.1 if pair_phase == 1 and beat == 3.5 else 0.96
+                velocity = 108 if pair_phase == 1 and beat == 3.5 else 98
+                sound = render_gm_note("combo_lead", note, duration, velocity=velocity, release=0.14, gain=gain)
+            elif is_sample_profile():
                 gain = 0.42 if pair_phase == 1 and beat == 3.5 else 0.34
                 sound = render_sample_voice("strumstick", target_note=note, duration=duration, gain=gain, attack=0.001, release=0.09)
             else:
@@ -591,7 +725,14 @@ def build_combo_theme(left, right, spec):
             add_note(left, right, beat_seconds, bar * 4 + beat, sound, pan=random.uniform(-0.08, 0.08))
 
         if bar >= 8:
-            if is_sample_profile():
+            if is_gm_profile():
+                support_notes = [
+                    spec["chords"][bar][1],
+                    spec["chords"][bar][2],
+                    spec["chords"][bar][3],
+                ]
+                sound = render_gm_chord("combo_support", support_notes, beat_seconds * 3.1, velocity=74, release=0.34, gain=0.34)
+            elif is_sample_profile():
                 support_notes = [
                     spec["chords"][bar][0],
                     spec["chords"][bar][2],
@@ -625,23 +766,23 @@ def build_combo_theme(left, right, spec):
                 body_gain = 0.6 if pair_phase == 0 else 0.72
                 sound = render_sample_voice("frame_drum_low", duration=0.34, gain=body_gain, attack=0.001, release=0.06)
             else:
-                sound = synth_kick(body=1.0 if pair_phase == 0 else 1.28)
+                sound = synth_kick(body=0.96 if pair_phase == 0 else 1.06, gain=0.46 if pair_phase == 0 else 0.52)
             add_note(left, right, beat_seconds, bar * 4 + beat, sound, pan=0.0)
         for beat in snare_patterns[pair_phase]:
             if is_sample_profile():
                 sound = render_sample_voice("frame_drum_small", duration=0.22, gain=0.36, attack=0.001, release=0.04)
             else:
-                sound = synth_snare(brightness=1.0)
+                sound = synth_snare(brightness=0.82, gain=0.4)
             add_note(left, right, beat_seconds, bar * 4 + beat, sound, pan=0.0)
         if pair_phase == 1:
             for beat in [3.0, 3.5]:
                 if is_sample_profile():
                     sound = render_sample_voice("frame_drum_low", duration=0.24, gain=0.44, attack=0.001, release=0.05)
                 else:
-                    sound = synth_tom(88.0, duration=0.28)
+                    sound = synth_tom(88.0, duration=0.28, gain=0.36)
                 add_note(left, right, beat_seconds, bar * 4 + beat, sound, pan=0.0)
         for beat in hat_patterns[pair_phase]:
-            add_note(left, right, beat_seconds, bar * 4 + beat, synth_hat(brightness=1.08), pan=random.uniform(-0.08, 0.08))
+            add_note(left, right, beat_seconds, bar * 4 + beat, synth_hat(brightness=0.88, gain=0.28), pan=random.uniform(-0.08, 0.08))
 
 
 def build_mana_theme(left, right, spec):
@@ -650,7 +791,11 @@ def build_mana_theme(left, right, spec):
 
     for bar in range(TOTAL_BARS):
         freqs = [note_to_freq(note) for note in spec["chords"][bar]]
-        add_note(left, right, beat_seconds, bar * 4, synth_pad(freqs, beat_seconds * 4, spec["pad_tone"]), pan=(-0.12 if bar % 2 == 0 else 0.12))
+        if is_gm_profile():
+            pad_sound = render_gm_chord("mana_pad", spec["chords"][bar], beat_seconds * 3.85, velocity=68, release=0.5, gain=0.5)
+        else:
+            pad_sound = synth_pad(freqs, beat_seconds * 4, spec["pad_tone"])
+        add_note(left, right, beat_seconds, bar * 4, pad_sound, pan=(-0.12 if bar % 2 == 0 else 0.12))
 
         root = note_to_freq(spec["chords"][bar][0])
         bass_patterns = {
@@ -677,7 +822,9 @@ def build_mana_theme(left, right, spec):
             octave_shift = 1 if idx % 3 == 0 else 2
             pitch = note[:-1] + str(int(note[-1]) + octave_shift)
             pluck_duration = 0.26 if bar % 4 in (0, 3) and idx == 0 else 0.18
-            if is_sample_profile():
+            if is_gm_profile():
+                sound = render_gm_note("mana_arp", pitch, beat_seconds * pluck_duration, velocity=80, release=0.1, gain=0.28)
+            elif is_sample_profile():
                 sound = render_sample_voice("clavisynth", target_note=pitch, duration=beat_seconds * pluck_duration, gain=0.26, attack=0.001, release=0.05)
             else:
                 sound = synth_pluck(note_to_freq(pitch), duration=pluck_duration, brilliance=1.35)
@@ -693,7 +840,9 @@ def build_mana_theme(left, right, spec):
             note = motif[(bar * 2 + idx) % len(motif)]
             style = "bell" if bar % 4 in (1, 3) else "soft"
             duration = beat_seconds * dur_beats
-            if is_sample_profile():
+            if is_gm_profile():
+                sound = render_gm_note("mana_lead", note, duration, velocity=100, release=0.2, gain=0.98)
+            elif is_sample_profile():
                 bank_name = "hand_chimes" if style == "bell" else "clavisynth"
                 gain = 0.26 if style == "bell" else 0.3
                 sound = render_sample_voice(bank_name, target_note=note, duration=duration, gain=gain, attack=0.004, release=0.08)
@@ -702,7 +851,14 @@ def build_mana_theme(left, right, spec):
             add_note(left, right, beat_seconds, bar * 4 + beat, sound, pan=random.uniform(-0.15, 0.15))
 
         if bar >= 8:
-            if is_sample_profile():
+            if is_gm_profile():
+                support_notes = [
+                    spec["chords"][bar][1],
+                    spec["chords"][bar][2],
+                    spec["chords"][bar][3],
+                ]
+                sound = render_gm_chord("mana_support", support_notes, beat_seconds * 3.7, velocity=66, release=0.46, gain=0.34)
+            elif is_sample_profile():
                 support_notes = [
                     spec["chords"][bar][1],
                     spec["chords"][bar][2],
@@ -738,11 +894,11 @@ def build_mana_theme(left, right, spec):
             3: [0.5, 1.75, 2.75, 3.25],
         }
         for beat in kick_patterns[bar % 4]:
-            add_note(left, right, beat_seconds, bar * 4 + beat, synth_kick(body=0.95), pan=0.0)
+            add_note(left, right, beat_seconds, bar * 4 + beat, synth_kick(body=0.92, gain=0.42), pan=0.0)
         for beat in snare_patterns[bar % 4]:
-            add_note(left, right, beat_seconds, bar * 4 + beat, synth_snare(brightness=0.95), pan=0.0)
+            add_note(left, right, beat_seconds, bar * 4 + beat, synth_snare(brightness=0.8, gain=0.36), pan=0.0)
         for beat in hat_patterns[bar % 4]:
-            add_note(left, right, beat_seconds, bar * 4 + beat, synth_hat(brightness=1.15), pan=random.uniform(-0.1, 0.1))
+            add_note(left, right, beat_seconds, bar * 4 + beat, synth_hat(brightness=0.92, gain=0.24), pan=random.uniform(-0.1, 0.1))
 
 
 def build_balance_theme(left, right, spec):
@@ -750,7 +906,11 @@ def build_balance_theme(left, right, spec):
 
     for bar in range(TOTAL_BARS):
         freqs = [note_to_freq(note) for note in spec["chords"][bar]]
-        add_note(left, right, beat_seconds, bar * 4, synth_pad(freqs, beat_seconds * 4, spec["pad_tone"]), pan=(-0.04 if bar % 2 == 0 else 0.04))
+        if is_gm_profile():
+            pad_sound = render_gm_chord("balance_pad", spec["chords"][bar], beat_seconds * 3.75, velocity=70, release=0.44, gain=0.48)
+        else:
+            pad_sound = synth_pad(freqs, beat_seconds * 4, spec["pad_tone"])
+        add_note(left, right, beat_seconds, bar * 4, pad_sound, pan=(-0.04 if bar % 2 == 0 else 0.04))
 
         root = note_to_freq(spec["chords"][bar][0])
         cycle_phase = bar % 4
@@ -772,14 +932,23 @@ def build_balance_theme(left, right, spec):
         }
         for note, beat, dur_beats in melody_map[cycle_phase]:
             duration = beat_seconds * dur_beats
-            if is_sample_profile():
+            if is_gm_profile():
+                sound = render_gm_note("balance_lead", note, duration, velocity=94, release=0.18, gain=0.92)
+            elif is_sample_profile():
                 sound = render_sample_voice("folk_harp", target_note=note, duration=duration, gain=0.34, attack=0.002, release=0.12)
             else:
                 sound = synth_lead(note_to_freq(note), duration, tone=spec["lead_tone"] * 0.96, style="soft", vibrato_depth=0.001)
             add_note(left, right, beat_seconds, bar * 4 + beat, sound, pan=(-0.08 if cycle_phase < 2 else 0.08))
 
         if bar >= 8:
-            if is_sample_profile():
+            if is_gm_profile():
+                support_notes = [
+                    spec["chords"][bar][0],
+                    spec["chords"][bar][2],
+                    spec["chords"][bar][3],
+                ]
+                sound = render_gm_chord("balance_support", support_notes, beat_seconds * 3.8, velocity=68, release=0.42, gain=0.36)
+            elif is_sample_profile():
                 support_notes = [
                     spec["chords"][bar][0],
                     spec["chords"][bar][2],
@@ -817,12 +986,12 @@ def build_balance_theme(left, right, spec):
             if is_sample_profile():
                 sound = render_sample_voice("frame_drum_low", duration=0.34, gain=0.46, attack=0.001, release=0.05)
             else:
-                sound = synth_kick(body=0.95)
+                sound = synth_kick(body=0.9, gain=0.4)
             add_note(left, right, beat_seconds, bar * 4 + beat, sound, pan=0.0)
         for beat in snare_patterns[cycle_phase]:
-            add_note(left, right, beat_seconds, bar * 4 + beat, synth_snare(brightness=0.92), pan=0.0)
+            add_note(left, right, beat_seconds, bar * 4 + beat, synth_snare(brightness=0.78, gain=0.34), pan=0.0)
         for beat in hat_patterns[cycle_phase]:
-            add_note(left, right, beat_seconds, bar * 4 + beat, synth_hat(brightness=0.98), pan=random.uniform(-0.06, 0.06))
+            add_note(left, right, beat_seconds, bar * 4 + beat, synth_hat(brightness=0.84, gain=0.22), pan=random.uniform(-0.06, 0.06))
         if is_sample_profile() and bar in (0, 4, 8, 12):
             add_note(left, right, beat_seconds, bar * 4, render_sample_voice("gong", duration=1.0, gain=0.12, attack=0.002, release=0.28), pan=0.0)
 
@@ -856,7 +1025,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--version", required=True)
     parser.add_argument("--themes", nargs="+", required=True)
-    parser.add_argument("--profile", default="synth", choices=["synth", "sampled_v1"])
+    parser.add_argument("--profile", default="synth", choices=["synth", "sampled_v1", "gm_v1"])
     args = parser.parse_args()
 
     CURRENT_PROFILE = args.profile
