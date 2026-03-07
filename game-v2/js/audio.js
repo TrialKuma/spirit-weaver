@@ -5,10 +5,10 @@ const AudioManager = {
     _bufferCache: {},
     _currentTrackKey: null,
     _trackMap: {
-        qi: 'assets/audio/bgm/qi_battle_loop_v15.wav',
-        combo: 'assets/audio/bgm/combo_battle_loop_v16.wav',
-        mana: 'assets/audio/bgm/mana_battle_loop_v15.wav',
-        balance: 'assets/audio/bgm/balance_battle_loop_v14.wav'
+        qi: 'assets/audio/bgm/qi_battle_loop.wav',
+        combo: 'assets/audio/bgm/combo_battle_loop.wav',
+        mana: 'assets/audio/bgm/mana_battle_loop.wav',
+        balance: 'assets/audio/bgm/balance_battle_loop.wav'
     },
 
     handleUserGesture() {

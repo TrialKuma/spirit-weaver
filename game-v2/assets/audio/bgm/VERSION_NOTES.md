@@ -1,9 +1,25 @@
 # BGM 版本说明
 
+- 当前 `assets/audio/bgm/` 根目录仅保留正式文件名：
+  - `qi_battle_loop.wav`
+  - `combo_battle_loop.wav`
+  - `mana_battle_loop.wav`
+  - `balance_battle_loop.wav`
+- 它们当前对应的定版来源：
+  - `qi = V15`
+  - `combo = V16`
+  - `mana = V15`
+  - `balance = V14`
+- 其余历史 `wav` 文件已统一归档到 `assets/audio/bgm/old/`
+- 最早的旧默认文件已在 `old/` 中改名为 `*_v2.wav`，避免与正式文件重名
+
 ## 当前文件对应关系
 
 - `qi_battle_loop.wav` / `combo_battle_loop.wav` / `mana_battle_loop.wav` / `balance_battle_loop.wav`
   - 作为当前游戏默认读取资源保留
+  - 当前定版来源分别为：`qi = V15`、`combo = V16`、`mana = V15`、`balance = V14`
+- `old/qi_battle_loop_v2.wav` / `old/combo_battle_loop_v2.wav` / `old/mana_battle_loop_v2.wav` / `old/balance_battle_loop_v2.wav`
+  - 为最早旧默认资源的归档版本
   - 视为 `V2`
 - `qi_battle_loop_v3.wav` / `combo_battle_loop_v3.wav` / `mana_battle_loop_v3.wav` / `balance_battle_loop_v3.wav`
   - 新一轮按职业特征重写后的对比版本
@@ -304,7 +320,7 @@
 
 ## 备注
 
-- 当前游戏代码默认播放的是 `qi/mana = V15`，`combo = V16`，`balance = V14`
+- 当前游戏代码默认播放的是正式文件名：`qi = V15`、`combo = V16`、`mana = V15`、`balance = V14`
 - `V9` 仍保留，仅作为“首轮怪采样替换版”的对照
-- 未带版本后缀的旧默认文件仍然保留，可随时切回
+- 最早旧默认文件已归档为 `old/*_v2.wav`，可随时切回
 - 如果确认 `V6` / `V8` / `V10` / `V11` / `V12` / `V13` / `V14` / `V15` / `V16` 中某一版更合适，再继续细修或固定为正式版本
