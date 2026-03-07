@@ -146,8 +146,9 @@ GM_PROGRAMS = {
     "qi_bass": 32,
     "qi_lead": 73,
     "qi_support": 49,
+    "combo_bass": 32,
     "combo_pad": 49,
-    "combo_lead": 29,
+    "combo_lead": 27,
     "combo_support": 48,
     "mana_pad": 89,
     "mana_bass": 33,
@@ -699,13 +700,25 @@ def build_combo_theme(left, right, spec):
             1: [(0.0, 0.2), (0.5, 0.18), (1.0, 0.18), (1.5, 0.22), (3.0, 0.26), (3.5, 0.34)],
         }
         for idx, (beat, dur_beats) in enumerate(bass_patterns[pair_phase]):
-            if pair_phase == 1 and beat >= 3.0:
+            if is_gm_profile():
+                if pair_phase == 1 and beat >= 3.0:
+                    bass_note = spec["chords"][bar][0]
+                    velocity = 66
+                    gain = 0.44
+                else:
+                    bass_note = spec["chords"][bar][0] if idx % 3 != 1 else spec["chords"][bar][1]
+                    velocity = 60
+                    gain = 0.4
+                bass_sound = render_gm_note("combo_bass", bass_note, beat_seconds * dur_beats, velocity=velocity, release=0.07, gain=gain)
+                add_note(left, right, beat_seconds, bar * 4 + beat, bass_sound, pan=-0.03)
+            elif pair_phase == 1 and beat >= 3.0:
                 note_freq = root
                 drive = 1.58
+                add_note(left, right, beat_seconds, bar * 4 + beat, synth_bass(note_freq, beat_seconds * dur_beats, drive=drive), pan=-0.03)
             else:
                 note_freq = root * (1.0 if idx % 3 != 1 else 1.5)
                 drive = 1.28
-            add_note(left, right, beat_seconds, bar * 4 + beat, synth_bass(note_freq, beat_seconds * dur_beats, drive=drive), pan=-0.03)
+                add_note(left, right, beat_seconds, bar * 4 + beat, synth_bass(note_freq, beat_seconds * dur_beats, drive=drive), pan=-0.03)
 
         melodic_patterns = {
             0: [(0.0, 0.14), (0.25, 0.14), (0.5, 0.14), (0.75, 0.14), (1.5, 0.16), (2.0, 0.16), (2.5, 0.16), (3.0, 0.2)],
@@ -724,9 +737,9 @@ def build_combo_theme(left, right, spec):
                 tone = spec["lead_tone"]
             duration = beat_seconds * dur_beats
             if is_gm_profile():
-                gain = 1.1 if pair_phase == 1 and beat == 3.5 else 0.96
-                velocity = 108 if pair_phase == 1 and beat == 3.5 else 98
-                sound = render_gm_note("combo_lead", note, duration, velocity=velocity, release=0.14, gain=gain)
+                gain = 1.02 if pair_phase == 1 and beat == 3.5 else 0.92
+                velocity = 102 if pair_phase == 1 and beat == 3.5 else 94
+                sound = render_gm_note("combo_lead", note, duration, velocity=velocity, release=0.1, gain=gain)
             elif is_sample_profile():
                 gain = 0.42 if pair_phase == 1 and beat == 3.5 else 0.34
                 sound = render_sample_voice("strumstick", target_note=note, duration=duration, gain=gain, attack=0.001, release=0.09)
