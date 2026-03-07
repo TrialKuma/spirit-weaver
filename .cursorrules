@@ -1,0 +1,151 @@
+# Spirit Weaver - 项目规则与上下文
+
+## 项目概览
+Spirit Weaver 是一个基于浏览器的 **回合制 Roguelike 战斗原型**，纯前端实现（HTML + CSS + 原生 JS，无框架无构建工具）。
+核心玩法：选择职业 → 战斗 → 击败敌人 → 选魂灵/强化 → 下一关，共 4 关。
+
+## 目录结构
+```
+spirit-weaver/
+├── game-v2/                # 主游戏目录
+│   ├── index.html          # 入口 HTML（选择界面 + 战斗 UI + 升级/魂灵浮层）
+│   ├── css/style.css       # 全部样式（CSS 变量主题、动画、布局）
+│   └── js/
+│       ├── state.js        # GameState 全局状态 + GameEvents 事件总线
+│       ├── skills.js       # SkillModifier 类 + createSkill() 工厂 + 伤害计算
+│       ├── classes.js      # Character 基类 → 4 职业子类 + SpiritCatalog + 魂灵实现
+│       ├── enemies.js      # Enemy 基类 + 8 种敌人子类（AI/意图系统）
+│       ├── upgrades.js     # 强化系统核心（稀有度/生成/应用逻辑）
+│       ├── upgrade_config.js # 全部强化配置（通用 + 职业专属）
+│       ├── main.js         # 游戏主循环、战斗流程、回合管理、技能执行
+│       ├── ui.js           # 所有 UI 渲染（血条/资源/技能/BUFF/意图/升级面板）
+│       └── utils.js        # CTBSystem 时间轴 + ParticleSystem 粒子特效 + Logger
+├── Spirit_Weaver_设计文档.md
+└── doc/                    # 平衡性分析文档
+```
+
+## JS 加载顺序（index.html 中）
+`state.js → skills.js → classes.js → enemies.js → upgrades.js → upgrade_config.js → utils.js → ui.js → main.js`
+所有文件共享全局作用域，无模块系统。
+
+## 核心架构
+
+### GameState（state.js）
+全局单例，存储所有运行时状态：
+- `player` / `enemy` / `spirit` — 当前战斗实体
+- `isPlayerTurn` / `isProcessingSkill` / `isPaused` / `isRunning` — 流程控制标志
+- `currentLevel` / `maxLevels(4)` / `turnCount` — 进度
+- `isUpgradeOpen` / `upgradeOptions` / `upgradeLevels` — 强化系统状态
+
+### GameEvents（state.js）
+简易事件总线 `{ on, off, emit }`，事件名如 `'afterSkill'`。目前利用率较低。
+
+### CTB 时间轴系统（utils.js - CTBSystem）
+- 行动值(AV) = `10000 / speed`，每 tick 减少 `tickSpeed(0.5)`
+- AV ≤ 0 时该单位行动，行动后重置 AV
+- `advanceUnitAV(unit, ratio)` / `delayUnitAV(unit, ratio)` 操控行动顺序
+- `render()` 使用 `_elMap` 缓存 DOM 元素避免重建
+
+### 技能系统（skills.js）
+- `createSkill(config)` 工厂函数，自动根据 type 添加 Tag
+- 伤害链：`getBaseDamage(owner)` → `getDamage(owner, context)` 叠加 Modifier
+- `SkillModifier({ type: 'mult'|'add', value, tags, skillId })` — 按 Tag/ID 匹配
+
+### 职业体系（classes.js - Character 子类）
+
+| 职业 | 类名 | 资源 | 核心机制 |
+|------|-------|------|----------|
+| 气宗 | QiMaster | qi (0-10, +2/回合) | 高消耗=内伤debuff，爆发 |
+| 剑圣 | ComboMaster | combo (0-10, 每hit+1) | 多段攻击攒连击，疾风速度叠层 |
+| 魔导 | ManaMaster | mana (0-10) + ammo | 装填弹药→强化射击，盈能层数 |
+| 判官 | BalanceMaster | balance (-5~+5, 趋0) | 阳提升自身/阴削弱敌人，极值决策/反差/宣判 |
+
+每个职业 3 个主动技能（attack/special/Ultimate）+ 1 个被动。
+技能关键属性：`id, name, type, cost, baseMultiplier, tags[], hits, cooldown, desc, balanceShift, effect`
+
+### 魂灵系统（classes.js - SpiritCatalog）
+三类各 3 个，共 9 个魂灵：
+- **自律型**（autonomous）：有独立速度，在时间轴上行动（守卫/誓盟/领主）
+- **协力型**（cooperative）：玩家攻击后自动追击（伴侣/侍从/协奏）
+- **助理型**（assistant）：提供增益/任务/经济（书记/信使/商人）
+
+钩子方法：`onBeforeSkill / onPlayerAction / onAfterSkill / onTurnStart / onTurnEnd / onSpiritTurn`
+
+### 敌人系统（enemies.js）
+- 继承 Character，有 `planNextAction()` 设置意图 + `executeAction(target)` 执行
+- 意图对象：`{ type: 'attack'|'defend'|'buff'|'debuff'|'charge'|'stun', value, desc, icon }`
+- 8 种敌人，每关从池中随机选择，HP/ATK 按关卡 +20%/+10% 缩放
+
+### 强化系统（upgrades.js + upgrade_config.js）
+- 稀有度：R(70%,1x) / SR(25%,2x) / SSR(5%,4x)
+- 通用强化 7 个（A/S/U倍率, 攻/防/速/血成长）
+- 职业专属各 4 个（如气宗内伤增强、剑圣多段加成等）
+- `applyUpgrade(option)` 修改 player 属性或添加 SkillModifier
+
+### UI 系统（ui.js）
+- `updateUI()` 主更新函数，每帧/状态变更时调用
+- 子函数：`updateResourceUI / updateSkillsUI / updateBuffBars / updateEnemyIntent / updateSpiritFrame`
+- `openUpgradeOverlay(options, callback)` / `closeUpgradeOverlay()` 强化选择
+- 所有 UI 通过 DOM 操作实现，无虚拟 DOM
+
+### 视觉效果（utils.js - ParticleSystem + style.css）
+- `ParticleSystem.showDamageNumber / showHitEffect / showDefenseEffect / screenShake / screenFlash`
+- CSS 动画：血条变色、回合指示器发光、资源格动画、技能卡hover
+
+## 战斗主循环（main.js - gameLoop）
+```
+CTB tick → 检查就绪单位 → 
+  玩家回合：等待技能选择 → usePlayerSkill() → 伤害计算/动画/多段hit → endTurn()
+  敌人回合：enemyTurn() → executeAction() → 动画 → endTurn()
+  魂灵回合：spiritTurn() → onSpiritTurn() → endTurn()
+→ 检查胜负 → 若敌人死亡：startNextLevel()（选魂灵/强化）→ 循环
+```
+
+## 编码约定
+- 语言：中文注释，英文变量名/类名
+- 无模块系统，全部全局作用域，通过 `<script>` 顺序加载
+- DOM 操作为主，大量 `document.createElement` + `element.style.xxx` 内联样式
+- CSS 使用 `var(--xxx)` 主题变量（定义在 :root 中）
+- 类继承用 ES6 class + extends
+- 异步用 setTimeout 模拟动画延迟，无 async/await
+- 事件监听直接绑定或通过 GameEvents 总线
+
+## CSS 主题变量
+```css
+--bg-primary: #0a0a0a;
+--bg-secondary: #1a1a2e;
+--bg-tertiary: #16213e;
+--text-primary: #e0e0e0;
+--text-secondary: #a0a0a0;
+--accent-primary: #00d4ff;    /* 主色调-青 */
+--accent-secondary: #ff0055;  /* 强调色-红 */
+--accent-tertiary: #00ff88;   /* 辅助色-绿 */
+--border-color: #333;
+```
+
+## 常见修改模式
+
+### 添加新强化
+1. `upgrade_config.js` 中添加配置对象（id/name/icon/desc/weight/effect）
+2. `upgrades.js` 的 `applyUpgrade()` 中添加 effect.kind 分支处理
+
+### 添加新敌人
+1. `enemies.js` 中创建 Enemy 子类，实现 `planNextAction()` 和 `executeAction()`
+2. 在 `EnemyPool` 数组中注册
+
+### 添加新魂灵
+1. `classes.js` 的 `SpiritCatalog` 中添加配置
+2. 在 `selectSpirit()` 的 switch 中添加对应实现类
+
+### 修改 UI
+- 结构：`index.html`
+- 样式：`css/style.css`
+- 逻辑：`js/ui.js`（渲染函数）
+- 浮层/覆盖层的 z-index 层级：upgrade-overlay(2000) > spirit-select(120) > bottom-panel(20) > main-stage
+
+## 注意事项
+- 修改 classes.js 时注意 `useSkill()` 返回的是 skill 对象引用，skill 的 damage/name 等属性可能在方法内被动态修改
+- 多段攻击（MultiHit）在 main.js 的 `usePlayerSkill()` 中通过 setTimeout 链式执行
+- `isProcessingSkill` 标志防止技能执行期间重复触发
+- 敌人意图在 `endTurn()` 中通过 `planNextAction()` 更新
+- 强化的 `displayName` 和 `displayDesc` 在 `rollUpgradeOptions()` 中动态生成（含等级/数值）

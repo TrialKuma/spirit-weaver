@@ -1,0 +1,77 @@
+---
+description: 四职业完整技能/资源/被动数据卡 — 修改职业、技能、平衡时参考，避免重读 classes.js
+globs:
+  - game-v2/js/classes.js
+  - game-v2/js/main.js
+alwaysApply: false
+---
+
+# 职业数据卡
+
+## 气宗 QiMaster
+**资源**: qi (0-10), +2/回合自动回复
+**被动**: 消耗≥6气 → 目标附加【内伤】2回合（受伤+30%）
+
+| 技能 | ID | 类型 | 消耗 | 倍率 | Hit | Tags | 说明 |
+|------|----|------|------|------|-----|------|------|
+| 轻击 | light_strike | attack | qi:0 | 100% | 1 | Light,Attack | 基础攻击 |
+| 迅击 | rapid_strike | special | qi:2 | 200% | 1 | Special | 目标有内伤→返还2气 |
+| 崩山 | devastate | Ultimate | qi:8 | 500% | 1 | Heavy,Ultimate | 触发被动(≥6气) |
+
+**升级关键属性**: `qiInternalInjuryMult`, `qiInternalBreak`, `qiRapidSpeedBoost`, `qiInternalCrit`
+
+---
+
+## 剑圣 ComboMaster
+**资源**: combo (0-10), 每次hit+1
+**被动**: 每次攻击+1层【疾风】(每层+10速, 满10层+20%攻)
+
+| 技能 | ID | 类型 | 消耗 | 倍率 | Hit | Tags | 说明 |
+|------|----|------|------|------|-----|------|------|
+| 疾风 | quick_strike | attack | combo:0 | 40%×2 | 2 | Light,MultiHit,Attack | +1疾风层 |
+| 连斩 | combo_strike | special | combo:0 | 50%×N | 1~5 | Light,MultiHit,Special | 60%追加,每hit+1连击 |
+| 终结技 | finisher | Ultimate | combo:6 | 1.5+0.5×cost | 1 | Heavy,Ultimate,Finisher | 消耗连击缩放 |
+
+**升级关键属性**: `comboMultiHitBonus`, `comboGaleSpeedBonus`, `comboChainChanceBonus`, `comboFinisherAllIn`
+
+---
+
+## 魔导 ManaMaster
+**资源**: mana (0-10) + ammo (0-∞)
+**被动**: 每消耗2魔力+1层【盈能】(上限5,每层+5%攻)。攻击消耗1层回3魔力
+**模式切换**: 有弹药=强化模式(高倍率,Ultimate标签), 无弹药=普通模式
+
+| 技能 | ID | 类型 | 消耗 | 倍率 | Hit | Tags | 说明 |
+|------|----|------|------|------|-----|------|------|
+| 射击/强化射击 | shoot | attack | ammo:1/0 | 360%/80% | 1 | Ranged,Ultimate/Attack | 有弹药时大幅增伤 |
+| 爆射/强化爆射 | burst | special | ammo:3/0 | 625%+/160% | 1 | Ranged,Heavy,Ultimate/Special | 无弹药时自减速 |
+| 装填 | reload | Ultimate | mana:6(-减费) | 无伤害 | 0 | Reload,Ultimate | +3弹药,消耗魔力叠盈能 |
+
+**升级关键属性**: `manaOverflowAtkBonus`, `manaOverflowSpeedBonus`, `manaReloadCostReduction`, `manaFullOverflowBurstBonus`
+
+---
+
+## 判官 BalanceMaster
+**资源**: balance (-5~+5), 每回合趋0(-1)
+**被动(阴阳之道)**: 阳面(>0)→全属性+10%/点, 阴面(<0)→敌方攻防-10%/点
+**极值系统**: |balance|=5时标记极值→下回合激活→使用任意技能消耗→CD 3次行动
+**反差机制**: 逆方向技能额外 |balance|×15% 倍率加成
+
+| 技能 | ID | 类型 | 倍率 | Hit | Tags | 说明 |
+|------|----|------|------|-----|------|------|
+| 阳击 | yang_strike | attack | 130% | 1 | Yang,Attack | balance+3,行动值推进15% |
+| 阴击 | yin_strike | special | 100% | 1 | Yin,Special | balance-3,施加侵蚀(ATK×20%/回合,1回合) |
+| 宣判 | verdict | Ultimate | 动态 | 1 | Judgment,Ultimate | 仅极值可用,平衡→0,阳极500%/阴极310%+审判 |
+
+**极值增强**: 烈阳击(250%,无视DEF) / 深渊击(180%,深渊侵蚀40%×2回合)
+**升级关键属性**: `balanceContrastBonus`, `balanceExtremeCDReduction`, `balanceErosionBonus`, `balancePerPointBonus`
+
+---
+
+## 通用 Character 方法（修改技能时需要了解）
+- `canUseSkill(skill)` — 各子类覆盖，检查资源/CD
+- `useSkill(skillId)` — 消耗资源，返回 skill 对象（可能动态修改 skill 属性）
+- `onAction(action)` — 技能后回调（叠层/回资源/触发被动）
+- `getBuffedAtk()` — 含 buff 的攻击力
+- `getStatsMultiplier()` — 判官专用，返回平衡增益倍率
+- `addModifier(mod)` / `getDamageModifiers(skill)` — 强化系统用

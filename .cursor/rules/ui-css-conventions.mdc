@@ -1,0 +1,80 @@
+---
+description: UI 与 CSS 开发约定 — 修改界面、样式、DOM 操作时参考
+globs:
+  - game-v2/css/style.css
+  - game-v2/js/ui.js
+  - game-v2/index.html
+alwaysApply: false
+---
+
+# UI / CSS 约定
+
+## Z-Index 层级表（从高到低）
+| 层级 | 元素 | z-index |
+|------|------|---------|
+| 最顶层 | upgrade-overlay（强化选择） | 2000 |
+| 浮层 | gameover-overlay | 1500 |
+| 浮层 | spirit-select-overlay（魂灵选择） | 120 |
+| Tooltip | buff-tooltip / skill-tooltip | 1000 |
+| 控制 | bottom-panel（技能/资源/日志） | 20 |
+| BUFF栏 | buff-bar | 20 |
+| 角色框 | character-box / enemy-box | 2 |
+| 背景 | spirit-frame | 0 |
+| 特效 | vfx-layer | 5 |
+
+**规则**: 新增浮层必须在此表中登记层级，避免遮挡冲突。
+
+## DOM 创建模式
+UI 全部通过 JS 动态创建，标准模式：
+```javascript
+const el = document.createElement('div');
+el.className = 'my-class';           // 用 className，不用 classList（除非追加）
+el.textContent = '文本';              // 纯文本用 textContent
+el.innerHTML = `<span>...</span>`;   // 含子元素用 innerHTML
+parent.appendChild(el);
+```
+- 优先用 CSS class 控制样式，减少 `el.style.xxx` 内联样式
+- 已有内联样式较多是历史遗留，新代码尽量用 class
+
+## CSS 命名
+- BEM-like 风格：`组件-子元素`（如 `buff-icon`, `buff-stack`, `buff-tooltip`）
+- 状态类：`active`, `disabled`, `hidden`, `critical`, `low`
+- 职业类：`qi`, `combo`, `mana`, `balance`（用于资源格配色）
+- 魂灵类型：`autonomous`, `cooperative`, `assistant`
+
+## 主题变量（:root）
+```
+--bg-primary: #0a0a0a      --accent-primary: #00d4ff (cyan)
+--bg-secondary: #1a1a2e    --accent-secondary: #ff0055 (red)
+--bg-tertiary: #16213e     --accent-tertiary: #00ff88 (green)
+--text-primary: #e0e0e0    --border-color: #333
+--text-secondary: #a0a0a0
+```
+新增颜色优先复用变量，不要硬编码。
+
+## 动画约定
+- 过渡: `transition: all 0.2s` 或 `transition: 具体属性 0.2s`
+- 关键帧命名: 驼峰，如 `turnGlow`, `ssrShimmer`, `cellPop`
+- 伤害数字/粒子: 通过 ParticleSystem（utils.js）创建，不要手动创建
+
+## UI 更新流程
+```
+状态变更 → updateUI() → 各子函数:
+  updateResourceUI()    资源格/滑块
+  updateSkillsUI()      技能卡片（含 CD、禁用、快捷键）
+  updateBuffBars()      玩家+敌人 BUFF 图标
+  updateEnemyIntent()   敌人意图框
+  updateSpiritFrame()   魂灵框状态
+  + HP bar 更新（内联在 updateUI 中）
+```
+
+## 浮层控制
+- 显示: `overlay.classList.remove('hidden')`, 设 `GameState.isPaused = true`
+- 隐藏: `overlay.classList.add('hidden')`, 设 `GameState.isPaused = false`
+- 升级浮层额外控制: `GameState.isUpgradeOpen`, `overlay.style.pointerEvents`
+
+## 常见坑
+1. `transform` 会创建新的 stacking context，导致子元素 z-index 被困——hover 提升 z-index 时注意
+2. `overflow: hidden` 会裁切绝对定位的 tooltip——需要时让 tooltip 挂到更外层
+3. 技能卡 disabled 状态同时设 `opacity: 0.5` + `pointerEvents: none`
+4. 敌人意图定位相对于 `.enemy-box`（position: relative）
