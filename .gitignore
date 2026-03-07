@@ -2,3 +2,8 @@
 /.obsidian/
 /.vscode/
 /.cursorrules
+
+# Non-code project artifacts
+/doc/
+/Spirit_Weaver_设计文档.md
+/simulate_balance.py
