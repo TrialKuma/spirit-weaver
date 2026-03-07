@@ -38,7 +38,7 @@ if errorlevel 1 (
 )
 
 git diff --cached --quiet
-if not errorlevel 1 (
+if errorlevel 1 (
   echo.
   echo [2/4] Creating commit...
   git -c user.name="%GIT_USER_NAME%" -c user.email="%GIT_USER_EMAIL%" commit -m "%COMMIT_MSG%"
