@@ -145,8 +145,68 @@ class ParticleSystem {
         }, holdMs);
     }
 
+    static _spriteCache = {};
+
+    static playSpriteEffect(x, y, sheetUrl, opts = {}) {
+        const vfxLayer = document.getElementById('vfx-layer');
+        if (!vfxLayer) return;
+
+        const frames    = opts.frames    || 4;
+        const frameW    = opts.frameW    || 256;
+        const frameH    = opts.frameH    || 256;
+        const fps       = opts.fps       || 12;
+        const scale     = opts.scale     || 1.0;
+        const offsetX   = opts.offsetX   || 0;
+        const offsetY   = opts.offsetY   || 0;
+
+        const displayW = frameW * scale;
+        const displayH = frameH * scale;
+
+        const el = document.createElement('div');
+        el.style.position = 'absolute';
+        el.style.left   = (x - displayW / 2 + offsetX) + 'px';
+        el.style.top    = (y - displayH / 2 + offsetY) + 'px';
+        el.style.width  = displayW + 'px';
+        el.style.height = displayH + 'px';
+        el.style.backgroundImage = `url(${sheetUrl})`;
+        el.style.backgroundSize  = `${frames * displayW}px ${displayH}px`;
+        el.style.backgroundRepeat = 'no-repeat';
+        el.style.backgroundPosition = '0 0';
+        if (opts.blendMode) el.style.mixBlendMode = opts.blendMode;
+        el.style.pointerEvents = 'none';
+        el.style.zIndex = '100';
+
+        vfxLayer.appendChild(el);
+
+        let frame = 0;
+        const interval = setInterval(() => {
+            frame++;
+            if (frame >= frames) {
+                clearInterval(interval);
+                el.remove();
+                return;
+            }
+            el.style.backgroundPosition = `-${frame * displayW}px 0`;
+        }, 1000 / fps);
+    }
+
+    static _impactSpriteMap = {
+        heavy:    { url: 'assets/vfx/impact_test_alpha.png', frames: 4, frameW: 344, frameH: 768, scale: 0.35 },
+        ultimate: { url: 'assets/vfx/impact_test_alpha.png', frames: 4, frameW: 344, frameH: 768, scale: 0.5 },
+    };
+
     // 差异化冲击效果（基于技能标签）
     static createImpact(x, y, type = 'normal', baseColor = '#ff6b9d') {
+        const spriteInfo = ParticleSystem._impactSpriteMap[type];
+        if (spriteInfo) {
+            ParticleSystem.playSpriteEffect(x, y, spriteInfo.url, {
+                frames: spriteInfo.frames,
+                frameW: spriteInfo.frameW,
+                frameH: spriteInfo.frameH,
+                fps: 10,
+                scale: spriteInfo.scale || 1.0,
+            });
+        }
         const configs = {
             light:    { count: 8,  color: '#00d4ff', size: 3, spread: 25 },
             heavy:    { count: 22, color: '#ff7043', size: 6, spread: 45 },

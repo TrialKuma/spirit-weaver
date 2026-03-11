@@ -47,16 +47,17 @@ function showRestOverlay(onDone) {
     options.forEach(option => {
         const card = document.createElement('div');
         card.className = 'rest-option-card';
+        const canAfford = !option.goldCost || RunManager.gold >= option.goldCost || (typeof hasInfiniteResources === 'function' && hasInfiniteResources());
 
         // 检查是否能使用（金币不足等）
-        if (option.goldCost && RunManager.gold < option.goldCost) {
+        if (!canAfford) {
             card.classList.add('disabled');
         }
 
         if (typeof AudioManager !== 'undefined') {
             AudioManager.bindUiSound(card, {
                 hover: 'hover',
-                click: (option.goldCost && RunManager.gold < option.goldCost) ? 'skip' : 'confirm'
+                click: canAfford ? 'confirm' : 'skip'
             });
         }
 

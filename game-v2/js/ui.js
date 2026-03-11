@@ -187,6 +187,7 @@ function updateUI() {
     if (typeof updateSpiritFrame === 'function') {
         updateSpiritFrame();
     }
+    updateDebugIndicator();
     
     // 更新关卡显示（使用 RunManager）
     const levelEl = document.getElementById('level-count');
@@ -199,6 +200,42 @@ function updateUI() {
             levelEl.textContent = `${GameState.currentLevel}/${GameState.maxLevels || 4}`;
         }
     }
+}
+
+function updateDebugIndicator() {
+    if (typeof document === 'undefined') return;
+    let el = document.getElementById('debug-indicator');
+    if (!el) {
+        el = document.createElement('div');
+        el.id = 'debug-indicator';
+        el.style.cssText = [
+            'position: fixed',
+            'top: 12px',
+            'right: 12px',
+            'z-index: 9999',
+            'padding: 6px 10px',
+            'border: 1px solid #ffcc00',
+            'border-radius: 6px',
+            'background: rgba(0, 0, 0, 0.75)',
+            'color: #ffcc00',
+            'font-size: 12px',
+            'font-weight: 700',
+            'letter-spacing: 0.6px',
+            'box-shadow: 0 0 8px rgba(255, 204, 0, 0.35)',
+            'pointer-events: none',
+            'display: none'
+        ].join(';');
+        document.body.appendChild(el);
+    }
+
+    const enabled = (typeof isDebugModeEnabled === 'function') && isDebugModeEnabled();
+    if (!enabled) {
+        el.style.display = 'none';
+        return;
+    }
+
+    el.textContent = 'DEBUG ON · 资源无限';
+    el.style.display = 'block';
 }
 
 function updateSpiritFrame() {

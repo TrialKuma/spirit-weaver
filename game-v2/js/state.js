@@ -19,6 +19,10 @@ const GameState = {
     maxLevels: 4,
     spiritChoiceGranted: false,
     followUpPending: null, // { followUps: [], callback: fn } — 追加技能等待选择
+    debug: {
+        enabled: false,
+        infiniteResources: true
+    },
     audio: {
         unlocked: false,
         bgmEnabled: true,
@@ -54,3 +58,31 @@ const GameEvents = {
         });
     }
 };
+
+function initDebugConfigFromUrl() {
+    try {
+        if (typeof window === 'undefined' || !window.location) return;
+        const params = new URLSearchParams(window.location.search || '');
+        const debugFlag = params.get('debug');
+        if (debugFlag === '1' || debugFlag === 'true' || debugFlag === 'on') {
+            GameState.debug.enabled = true;
+        }
+    } catch (err) {
+        console.warn('initDebugConfigFromUrl failed:', err);
+    }
+}
+
+function isDebugModeEnabled() {
+    return !!(GameState.debug && GameState.debug.enabled);
+}
+
+function hasInfiniteResources() {
+    return !!(isDebugModeEnabled() && GameState.debug && GameState.debug.infiniteResources);
+}
+
+function setDebugModeEnabled(enabled) {
+    if (!GameState.debug) GameState.debug = {};
+    GameState.debug.enabled = !!enabled;
+}
+
+initDebugConfigFromUrl();

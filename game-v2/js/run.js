@@ -12,10 +12,10 @@ const RunManager = {
         this.currentNodeIndex = 0;
         this.gold = 0;
 
-        // 阶段 1: 3 普通战 + 1 休息
+        // 阶段 1: 2 普通战 + 1 精英战 + 1 休息
         this.nodes.push({ type: 'battle', phase: 1, label: '遭遇战' });
         this.nodes.push({ type: 'battle', phase: 1, label: '遭遇战' });
-        this.nodes.push({ type: 'battle', phase: 1, label: '遭遇战' });
+        this.nodes.push({ type: 'elite', phase: 1, label: '精英战' });
         this.nodes.push({ type: 'rest', phase: 1, label: '休息点' });
 
         // 阶段 2: 2 普通战 + 1 精英战 + 1 休息
@@ -102,6 +102,9 @@ const RunManager = {
     },
 
     spendGold(amount) {
+        if (typeof hasInfiniteResources === 'function' && hasInfiniteResources()) {
+            return true;
+        }
         if (this.gold >= amount) {
             this.gold -= amount;
             return true;

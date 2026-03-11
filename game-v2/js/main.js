@@ -309,6 +309,9 @@ function initGame() {
     initBattleBgOrbs();
 
     Logger.log('游戏初始化完成');
+    if (typeof isDebugModeEnabled === 'function' && isDebugModeEnabled()) {
+        Logger.log('DEBUG 模式已开启（资源无限）', true);
+    }
     Logger.log(`关卡 ${GameState.currentLevel}/${GameState.maxLevels}`);
     if (GameState.spirit) {
         Logger.log(`契约魂灵: ${GameState.spirit.name}`);
@@ -420,6 +423,18 @@ function getClassColor(classId) {
 function getEnemyActionColor(actionType) {
     const map = { attack: '#c62828', charge: '#e65100', buff: '#2e7d32', debuff: '#6a1b9a', defend: '#37474f' };
     return map[actionType] || '#c62828';
+}
+
+function toggleDebugMode() {
+    const nextEnabled = !(typeof isDebugModeEnabled === 'function' && isDebugModeEnabled());
+    if (typeof setDebugModeEnabled === 'function') {
+        setDebugModeEnabled(nextEnabled);
+    } else if (GameState && GameState.debug) {
+        GameState.debug.enabled = nextEnabled;
+    }
+    const stateText = nextEnabled ? '开启' : '关闭';
+    Logger.log(`DEBUG 模式${stateText}${nextEnabled ? '（资源无限）' : ''}`, true);
+    updateUI();
 }
 
 // ==================== CTB 动态加速 ====================
@@ -1790,6 +1805,11 @@ window.addEventListener('DOMContentLoaded', () => {
 
     // 键盘快捷键（1/2/3 对应三个技能）
     document.addEventListener('keydown', (e) => {
+        if (e.key === 'F8') {
+            e.preventDefault();
+            toggleDebugMode();
+            return;
+        }
         if (!GameState.isPlayerTurn || GameState.isProcessingSkill || !GameState.player) return;
         if (GameState.isUpgradeOpen) return;
         const spiritOverlay = document.getElementById('spirit-select-overlay');

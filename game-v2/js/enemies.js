@@ -530,6 +530,196 @@ class ElementalMage extends Enemy {
     }
 }
 
+// 11. 噬魂祭司 - 精英：攻击吸取玩家资源 + 可打断的蓄力吸取
+class SoulDevourer extends Enemy {
+    constructor() {
+        super('soul_devourer', '噬魂祭司', { hp: 260, speed: 95, baseAtk: 13, def: 2 });
+        this.icon = '👁️';
+    }
+
+    planNextAction() {
+        const turn = this.actionHistory.length;
+        const cycle = turn % 4;
+
+        if (cycle <= 1) {
+            const dmg = Math.floor(this.baseAtk * 0.9);
+            this.nextAction = {
+                type: 'attack',
+                value: dmg,
+                desc: `噬魂弹！造成 ${dmg} 伤害并吸取1点资源`,
+                icon: '👁️',
+                vfx: 'ranged',
+                vfxColor: '#ce93d8',
+                drainResource: 1
+            };
+        } else if (cycle === 2) {
+            this.nextAction = {
+                type: 'attack',
+                value: this.baseAtk,
+                desc: `暗影抓取！造成 ${this.baseAtk} 伤害`,
+                icon: '🖐️',
+                vfx: 'melee'
+            };
+        } else {
+            this.isCharging = true;
+            this.nextAction = {
+                type: 'charge',
+                value: 0,
+                desc: '聚集噬魂之力...将吸取大量资源！（可被能量技打断）',
+                icon: '⚠'
+            };
+        }
+    }
+
+    interrupt() {
+        this.isCharging = false;
+        this.nextAction = {
+            type: 'stun',
+            value: 0,
+            desc: '噬魂被打断，陷入虚弱！',
+            icon: '💫'
+        };
+    }
+
+    _drainPlayerResource(target, amount) {
+        if (!target || !target.resources) return;
+        if (
+            typeof hasInfiniteResources === 'function' &&
+            hasInfiniteResources() &&
+            typeof GameState !== 'undefined' &&
+            target === GameState.player
+        ) {
+            return;
+        }
+        const key = typeof getPrimaryResourceKey === 'function' ? getPrimaryResourceKey(target) : null;
+        if (!key) return;
+        const res = target.resources[key];
+        if (!res) return;
+        const min = res.min !== undefined ? res.min : 0;
+        const before = res.val;
+        if (key === 'balance') {
+            if (res.val > 0) res.val = Math.max(min, res.val - amount);
+            else if (res.val < 0) res.val = Math.min(res.max || 5, res.val + amount);
+        } else {
+            res.val = Math.max(min, res.val - amount);
+        }
+        const drained = Math.abs(before - res.val);
+        if (drained > 0) {
+            Logger.log(`噬魂祭司吸取了 ${drained} 点${res.name}！`, true);
+            if (typeof updateResourceUI === 'function') updateResourceUI();
+        }
+    }
+
+    executeAction(target) {
+        if (this.nextAction.type === 'charge') {
+            Logger.log(`${this.name} 正在聚集噬魂之力...`);
+            return { damage: 0 };
+        }
+        if (this.nextAction.type === 'stun') {
+            Logger.log(`${this.name} 虚弱中，无法行动！`);
+            this.isCharging = false;
+            return { damage: 0 };
+        }
+
+        if (this.isCharging) {
+            this.isCharging = false;
+            const dmg = Math.floor(this.baseAtk * 2.0);
+            this._drainPlayerResource(target, 3);
+            target.takeDamage(dmg);
+            Logger.log(`噬魂爆发！造成 ${dmg} 伤害并吸取3点资源！`);
+            this.actionHistory.push('attack');
+            return { damage: dmg };
+        }
+
+        if (this.nextAction.drainResource) {
+            this._drainPlayerResource(target, this.nextAction.drainResource);
+        }
+        return super.executeAction(target);
+    }
+}
+
+// 12. 铁壁守卫 - 精英：超高防御 + 周期性弱点暴露
+class IronBulwark extends Enemy {
+    constructor() {
+        super('iron_bulwark', '铁壁守卫', { hp: 380, speed: 55, baseAtk: 12, def: 8 });
+        this.icon = '🏰';
+        this.isExposed = false;
+        this.savedDef = 8;
+    }
+
+    planNextAction() {
+        const turn = this.actionHistory.length;
+        const cycle = turn % 5;
+
+        if (cycle === 0) {
+            this.nextAction = {
+                type: 'attack',
+                value: this.baseAtk,
+                desc: `铁锤猛击！造成 ${this.baseAtk} 伤害`,
+                icon: '🔨',
+                vfx: 'melee'
+            };
+        } else if (cycle === 1) {
+            this.nextAction = {
+                type: 'buff',
+                value: 4,
+                buff: {
+                    name: '铁壁强化',
+                    type: 'buff',
+                    stat: 'def',
+                    value: 4,
+                    duration: 2,
+                    desc: '防御力+4'
+                },
+                desc: '铁壁强化！防御大幅提升',
+                icon: '🛡'
+            };
+        } else if (cycle === 2) {
+            const dmg = Math.floor(this.baseAtk * 1.5);
+            this.nextAction = {
+                type: 'attack',
+                value: dmg,
+                desc: `重锤砸击！造成 ${dmg} 伤害`,
+                icon: '💥',
+                vfx: 'melee'
+            };
+        } else if (cycle === 3) {
+            this.isExposed = true;
+            this.savedDef = this.def;
+            this.nextAction = {
+                type: 'buff',
+                value: 0,
+                buff: {
+                    name: '弱点暴露',
+                    type: 'debuff',
+                    stat: 'def',
+                    value: -this.def,
+                    duration: 1,
+                    desc: '防御归零'
+                },
+                desc: '装甲出现裂缝...弱点暴露！',
+                icon: '💔'
+            };
+        } else {
+            this.nextAction = {
+                type: 'attack',
+                value: this.baseAtk,
+                desc: `铁锤猛击！造成 ${this.baseAtk} 伤害`,
+                icon: '🔨',
+                vfx: 'melee'
+            };
+        }
+    }
+
+    executeAction(target) {
+        const result = super.executeAction(target);
+        if (this.isExposed) {
+            this.isExposed = false;
+        }
+        return result;
+    }
+}
+
 // ==================== BOSS ====================
 
 // 11. 远古守护者 - Boss：多阶段
@@ -650,14 +840,187 @@ class AncientGuardian extends Enemy {
     }
 }
 
+// 13. 虚空织者 - Boss：速度操控 + 双阶段
+class VoidWeaver extends Enemy {
+    constructor() {
+        super('void_weaver', '虚空织者', { hp: 600, speed: 90, baseAtk: 16, def: 4 });
+        this.icon = '🕸️';
+        this.phase = 1;
+        this.enraged = false;
+        this.turnCounter = 0;
+    }
+
+    planNextAction() {
+        this.turnCounter++;
+
+        if (this.hp <= this.maxHp * 0.5 && !this.enraged) {
+            this.enraged = true;
+            this.phase = 2;
+            this.baseSpeed += 30;
+            this.speed += 30;
+            this.baseAtk = Math.floor(this.baseAtk * 1.3);
+            Logger.log(`${this.name} 的虚空之力觉醒！速度和攻击大幅提升！`, true);
+        }
+
+        if (this.phase === 1) {
+            this._planPhase1();
+        } else {
+            this._planPhase2();
+        }
+    }
+
+    _planPhase1() {
+        const cycle = (this.turnCounter - 1) % 3;
+
+        if (cycle === 0) {
+            const dmg = Math.floor(this.baseAtk * 1.0);
+            this.nextAction = {
+                type: 'attack',
+                value: dmg,
+                debuff: {
+                    name: '虚空侵蚀',
+                    type: 'dot',
+                    value: 3,
+                    duration: 2,
+                    stackable: true
+                },
+                desc: `虚空弹！造成 ${dmg} 伤害并附加虚空侵蚀`,
+                icon: '🌀',
+                vfx: 'ranged',
+                vfxColor: '#b388ff'
+            };
+        } else if (cycle === 1) {
+            const dmg = Math.floor(this.baseAtk * 0.8);
+            this.nextAction = {
+                type: 'attack',
+                value: dmg,
+                debuff: {
+                    name: '时间扭曲',
+                    type: 'debuff',
+                    stat: 'speed',
+                    value: -0.15,
+                    duration: 2,
+                    desc: '速度降低15%'
+                },
+                desc: `时间裂隙！造成 ${dmg} 伤害并扭曲时间`,
+                icon: '⏳',
+                vfx: 'ranged',
+                vfxColor: '#7c4dff'
+            };
+        } else {
+            this.nextAction = {
+                type: 'buff',
+                value: 0,
+                buff: {
+                    name: '虚空加速',
+                    type: 'buff',
+                    stat: 'speed',
+                    value: 0.3,
+                    duration: 2,
+                    desc: '速度提升30%'
+                },
+                desc: '扭曲时空...速度大幅提升！',
+                icon: '⚡'
+            };
+        }
+    }
+
+    _planPhase2() {
+        const cycle = (this.turnCounter - 1) % 4;
+
+        if (cycle === 0) {
+            const dmg = Math.floor(this.baseAtk * 0.7);
+            this.nextAction = {
+                type: 'attack',
+                value: dmg,
+                hits: 2,
+                desc: `虚空风暴（${dmg}×2）`,
+                icon: '🌪️',
+                vfx: 'ranged',
+                vfxColor: '#b388ff'
+            };
+        } else if (cycle === 1) {
+            const shieldVal = Math.floor(this.maxHp * 0.1);
+            this.nextAction = {
+                type: 'buff',
+                value: shieldVal,
+                buff: { name: '虚空护盾', type: 'shield', value: shieldVal },
+                desc: `编织虚空护盾（${shieldVal}点）`,
+                icon: '🛡'
+            };
+        } else if (cycle === 2) {
+            this.isCharging = true;
+            this.nextAction = {
+                type: 'charge',
+                value: 0,
+                desc: '凝聚虚空之力...准备释放湮灭！（可被能量技打断）',
+                icon: '⚠'
+            };
+        } else {
+            if (this.isCharging) {
+                const dmg = Math.floor(this.baseAtk * 2.8);
+                this.isCharging = false;
+                this.nextAction = {
+                    type: 'attack',
+                    value: dmg,
+                    debuff: {
+                        name: '虚空侵蚀',
+                        type: 'dot',
+                        value: 5,
+                        duration: 2,
+                        stackable: true
+                    },
+                    desc: `虚空湮灭！造成 ${dmg} 伤害并附加强力侵蚀`,
+                    icon: '💥',
+                    vfx: 'ranged',
+                    vfxColor: '#6200ea'
+                };
+            } else {
+                const dmg = Math.floor(this.baseAtk * 1.2);
+                this.nextAction = {
+                    type: 'attack',
+                    value: dmg,
+                    desc: `虚空冲击！造成 ${dmg} 伤害`,
+                    icon: '🌀',
+                    vfx: 'ranged',
+                    vfxColor: '#b388ff'
+                };
+            }
+        }
+    }
+
+    interrupt() {
+        this.isCharging = false;
+        this.nextAction = {
+            type: 'stun',
+            value: 0,
+            desc: '虚空之力被打断，陷入失衡！',
+            icon: '💫'
+        };
+    }
+
+    executeAction(target) {
+        if (this.nextAction && this.nextAction.type === 'charge') {
+            Logger.log(`${this.name} 正在凝聚虚空之力...`);
+            return { damage: 0 };
+        }
+        if (this.nextAction && this.nextAction.type === 'stun') {
+            Logger.log(`${this.name} 失衡中，无法行动！`);
+            this.isCharging = false;
+            return { damage: 0 };
+        }
+        return super.executeAction(target);
+    }
+}
+
 // ==================== 敌人创建工厂 ====================
 
 // 普通敌人池
 const NormalEnemyPool = ['slime', 'goblin', 'beetle', 'crystal', 'snake', 'curse', 'rage', 'scout'];
 // 精英敌人池
-const EliteEnemyPool = ['shadow_blade', 'elemental_mage'];
+const EliteEnemyPool = ['shadow_blade', 'elemental_mage', 'soul_devourer', 'iron_bulwark'];
 // Boss 池
-const BossPool = ['ancient_guardian'];
+const BossPool = ['ancient_guardian', 'void_weaver'];
 
 function createTestEnemy(type = 'random') {
     // 根据 RunManager 节点类型选择敌人池
@@ -685,6 +1048,9 @@ function createTestEnemy(type = 'random') {
         case 'shadow_blade': enemy = new ShadowBlade(); break;
         case 'elemental_mage': enemy = new ElementalMage(); break;
         case 'ancient_guardian': enemy = new AncientGuardian(); break;
+        case 'soul_devourer': enemy = new SoulDevourer(); break;
+        case 'iron_bulwark': enemy = new IronBulwark(); break;
+        case 'void_weaver': enemy = new VoidWeaver(); break;
         default: enemy = new Slime();
     }
     

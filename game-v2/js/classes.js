@@ -272,6 +272,9 @@ class QiMaster extends Character {
     }
 
     canUseSkill(skill) {
+        if (typeof hasInfiniteResources === 'function' && hasInfiniteResources()) {
+            return true;
+        }
         return this.resources.qi.val >= (skill.cost.qi || 0);
     }
 
@@ -283,8 +286,12 @@ class QiMaster extends Character {
             return false;
         }
 
-        this.resources.qi.val -= (skill.cost.qi || 0);
-        Logger.log(`使用 ${skill.name}，消耗 ${skill.cost.qi || 0} 气`);
+        if (!(typeof hasInfiniteResources === 'function' && hasInfiniteResources())) {
+            this.resources.qi.val -= (skill.cost.qi || 0);
+            Logger.log(`使用 ${skill.name}，消耗 ${skill.cost.qi || 0} 气`);
+        } else {
+            Logger.log(`使用 ${skill.name}（DEBUG：资源不消耗）`);
+        }
 
         updateResourceUI();
         return skill;
@@ -401,6 +408,9 @@ class ComboMaster extends Character {
     }
 
     canUseSkill(skill) {
+        if (typeof hasInfiniteResources === 'function' && hasInfiniteResources()) {
+            return true;
+        }
         return this.resources.combo.val >= (skill.cost.combo || 0);
     }
 
@@ -416,10 +426,16 @@ class ComboMaster extends Character {
             const cost = this.comboFinisherConsumeAll
                 ? Math.max(6, this.resources.combo.val)
                 : 6;
-            this.resources.combo.val -= cost;
+            if (!(typeof hasInfiniteResources === 'function' && hasInfiniteResources())) {
+                this.resources.combo.val -= cost;
+            }
             const buffedAtk = this.getBuffedAtk ? this.getBuffedAtk() : this.baseAtk;
             skill.damage = buffedAtk * (1.5 + 0.5 * cost); 
-            Logger.log(`使用 ${skill.name}，消耗 ${cost} 连击`);
+            Logger.log(
+                (typeof hasInfiniteResources === 'function' && hasInfiniteResources())
+                    ? `使用 ${skill.name}（DEBUG：连击不消耗）`
+                    : `使用 ${skill.name}，消耗 ${cost} 连击`
+            );
         }
         
         updateResourceUI();
@@ -467,7 +483,9 @@ class ManaMaster extends Character {
     }
     
     updateSkills() {
-        const hasAmmo = this.resources.ammo.val > 0;
+        const hasAmmo = (typeof hasInfiniteResources === 'function' && hasInfiniteResources())
+            ? true
+            : this.resources.ammo.val > 0;
         // 计算当前攻击力加成
         const atkMult = 1.0 + (this.stacks * (0.05 + (this.manaOverflowAtkBonus || 0)));
         const baseAtk = this.getBuffedAtk ? this.getBuffedAtk() : this.baseAtk;
@@ -527,6 +545,9 @@ class ManaMaster extends Character {
     }
 
     canUseSkill(skill) {
+        if (typeof hasInfiniteResources === 'function' && hasInfiniteResources()) {
+            return true;
+        }
         if (skill.cost.mana !== undefined) {
             return this.resources.mana.val >= skill.cost.mana;
         }
@@ -548,25 +569,31 @@ class ManaMaster extends Character {
 
         if (skill.effect === 'reload') {
             // 装填：消耗魔力，获得盈能，但不触发被动（不消耗盈能，不回复魔力）
-            if (skill.cost.mana > 0) {
+            if (skill.cost.mana > 0 && !(typeof hasInfiniteResources === 'function' && hasInfiniteResources())) {
                 this.resources.mana.val -= skill.cost.mana;
                 const stacksGained = Math.floor(skill.cost.mana / 2);
                 this.stacks = Math.min(5, this.stacks + stacksGained);
                 Logger.log(`获得 ${stacksGained} 层【盈能】(当前 ${this.stacks})`);
                 updateBuffBars();
             }
-            this.resources.ammo.val += skill.ammoGain;
+            if (typeof hasInfiniteResources === 'function' && hasInfiniteResources()) {
+                this.resources.ammo.val = Math.max(this.resources.ammo.val, skill.ammoGain);
+            } else {
+                this.resources.ammo.val += skill.ammoGain;
+            }
             Logger.log(`装填完成！获得 ${skill.ammoGain} 发弹药`);
         } else if (skill.cost.mana > 0) {
             // 其他消耗魔力的技能（如果有的话）
-            this.resources.mana.val -= skill.cost.mana;
+            if (!(typeof hasInfiniteResources === 'function' && hasInfiniteResources())) {
+                this.resources.mana.val -= skill.cost.mana;
+            }
             const stacksGained = Math.floor(skill.cost.mana / 2);
             this.stacks = Math.min(5, this.stacks + stacksGained);
             Logger.log(`获得 ${stacksGained} 层【盈能】(当前 ${this.stacks})`);
             updateBuffBars();
         }
         
-        if (skill.cost.ammo > 0) {
+        if (skill.cost.ammo > 0 && !(typeof hasInfiniteResources === 'function' && hasInfiniteResources())) {
             this.resources.ammo.val -= skill.cost.ammo;
         }
         
@@ -868,6 +895,15 @@ function getPrimaryResourceKey(player) {
 
 function adjustResource(player, key, amount) {
     if (!player || !player.resources || !player.resources[key]) return 0;
+    if (
+        amount < 0 &&
+        typeof hasInfiniteResources === 'function' &&
+        hasInfiniteResources() &&
+        typeof GameState !== 'undefined' &&
+        player === GameState.player
+    ) {
+        return 0;
+    }
     const res = player.resources[key];
     const min = res.min !== undefined ? res.min : 0;
     const max = res.max !== undefined ? res.max : 999;
@@ -1430,11 +1466,14 @@ const FollowUpSkillDefs = {
         cost: { qi: 1 },
         costDesc: '1 气',
         canUse(player) {
+            if (typeof hasInfiniteResources === 'function' && hasInfiniteResources()) return true;
             return player && player.resources.qi.val >= 1;
         },
         execute(player, enemy) {
             if (!player || !enemy) return { damage: 0 };
-            player.resources.qi.val -= 1;
+            if (!(typeof hasInfiniteResources === 'function' && hasInfiniteResources())) {
+                player.resources.qi.val -= 1;
+            }
             let dmg = player.getBuffedAtk() * 1.0;
             if (enemy.internalInjury > 0) dmg *= 1.5;
             updateResourceUI();
@@ -1450,11 +1489,14 @@ const FollowUpSkillDefs = {
         cost: { qi: 1 },
         costDesc: '1 气',
         canUse(player) {
+            if (typeof hasInfiniteResources === 'function' && hasInfiniteResources()) return true;
             return player && player.resources.qi.val >= 1;
         },
         execute(player, enemy) {
             if (!player || !enemy) return { damage: 0 };
-            player.resources.qi.val -= 1;
+            if (!(typeof hasInfiniteResources === 'function' && hasInfiniteResources())) {
+                player.resources.qi.val -= 1;
+            }
             const dmg = player.getBuffedAtk() * 0.6;
             if (typeof delayUnitAV === 'function') {
                 delayUnitAV(enemy, 0.2);
@@ -1473,11 +1515,14 @@ const FollowUpSkillDefs = {
         cost: { combo: 1 },
         costDesc: '1 连击',
         canUse(player) {
+            if (typeof hasInfiniteResources === 'function' && hasInfiniteResources()) return true;
             return player && player.resources.combo.val >= 1;
         },
         execute(player, enemy) {
             if (!player || !enemy) return { damage: 0 };
-            player.resources.combo.val -= 1;
+            if (!(typeof hasInfiniteResources === 'function' && hasInfiniteResources())) {
+                player.resources.combo.val -= 1;
+            }
             let dmg = player.getBuffedAtk() * 0.8;
             if (player.speedStacks >= 10) dmg *= 1.2;
             // 叠1层疾风（追加不触发被动的"叠层"，但回旋斩自带叠层效果）
@@ -1500,11 +1545,14 @@ const FollowUpSkillDefs = {
         cost: { combo: 1 },
         costDesc: '1 连击',
         canUse(player) {
+            if (typeof hasInfiniteResources === 'function' && hasInfiniteResources()) return true;
             return player && player.resources.combo.val >= 1;
         },
         execute(player, enemy) {
             if (!player || !enemy) return { damage: 0 };
-            player.resources.combo.val -= 1;
+            if (!(typeof hasInfiniteResources === 'function' && hasInfiniteResources())) {
+                player.resources.combo.val -= 1;
+            }
             let dmg = player.getBuffedAtk() * 0.5;
             if (player.speedStacks >= 10) dmg *= 1.2;
             enemy.addBuff({
@@ -1529,11 +1577,14 @@ const FollowUpSkillDefs = {
         cost: { ammo: 1 },
         costDesc: '1 弹药',
         canUse(player) {
+            if (typeof hasInfiniteResources === 'function' && hasInfiniteResources()) return true;
             return player && player.resources.ammo.val >= 1;
         },
         execute(player, enemy) {
             if (!player || !enemy) return { damage: 0 };
-            player.resources.ammo.val -= 1;
+            if (!(typeof hasInfiniteResources === 'function' && hasInfiniteResources())) {
+                player.resources.ammo.val -= 1;
+            }
             const atkMult = 1.0 + ((player.stacks || 0) * (0.05 + (player.manaOverflowAtkBonus || 0)));
             const dmg = player.getBuffedAtk() * atkMult * 1.2;
             // 触发盈能被动：消耗1层盈能，回3魔力
@@ -1557,12 +1608,19 @@ const FollowUpSkillDefs = {
         cost: { mana: 4 },
         costDesc: '4 魔力',
         canUse(player) {
+            if (typeof hasInfiniteResources === 'function' && hasInfiniteResources()) return true;
             return player && player.resources.mana.val >= 4;
         },
         execute(player, enemy) {
             if (!player || !enemy) return { damage: 0 };
-            player.resources.mana.val -= 4;
-            player.resources.ammo.val += 1;
+            if (!(typeof hasInfiniteResources === 'function' && hasInfiniteResources())) {
+                player.resources.mana.val -= 4;
+            }
+            if (typeof hasInfiniteResources === 'function' && hasInfiniteResources()) {
+                player.resources.ammo.val = Math.max(player.resources.ammo.val, 1);
+            } else {
+                player.resources.ammo.val += 1;
+            }
             const stacksGained = 2; // 4魔力 / 2 = 2层盈能
             player.stacks = Math.min(5, player.stacks + stacksGained);
             Logger.log(`过载充能！+1弹药，+${stacksGained}层盈能（当前${player.stacks}层）`, true);
