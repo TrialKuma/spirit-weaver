@@ -1,4 +1,4 @@
-// ==================== 肉鸽强化系统（新版）====================
+// ==================== 肉鸽强化系统（带 tier / keywords）====================
 
 const UpgradeRarityTable = [
     { id: 'R', weight: 70, mult: 1, color: '#4fc3f7' },
@@ -117,79 +117,153 @@ function getRandomUpgrades(count = 3) {
 function applyUpgrade(upgrade) {
     if (!upgrade || !GameState.player) return;
     const effect = upgrade.effect || {};
+    const player = GameState.player;
 
     switch (effect.kind) {
         case 'skill_tag_mult':
             if (effect.deltaMultiplier) {
-                GameState.player.addModifier(new SkillModifier({
-                    type: 'mult',
-                    value: effect.deltaMultiplier,
-                    tags: effect.tags
+                player.addModifier(new SkillModifier({
+                    type: 'mult', value: effect.deltaMultiplier, tags: effect.tags
                 }));
             }
             break;
         case 'stat_growth':
             if (effect.stat === 'atk') {
-                GameState.player.baseAtk += effect.totalValue;
+                player.baseAtk += effect.totalValue;
             } else if (effect.stat === 'def') {
-                GameState.player.def += effect.totalValue;
+                player.def += effect.totalValue;
             } else if (effect.stat === 'speed') {
-                GameState.player.baseSpeed += effect.totalValue;
-                GameState.player.speed += effect.totalValue;
+                player.baseSpeed += effect.totalValue;
+                player.speed += effect.totalValue;
             } else if (effect.stat === 'hp') {
-                GameState.player.maxHp += effect.totalValue;
-                GameState.player.hp += effect.totalValue;
+                player.maxHp += effect.totalValue;
+                player.hp += effect.totalValue;
             }
             break;
+
+        // === 通用 synergy ===
+        case 'first_strike':
+            player.upgradeFirstStrike = true;
+            break;
+        case 'desperation':
+            player.upgradeDesperationMult = effect.totalValue || 0.4;
+            break;
+        case 'combo_reward':
+            player.upgradeComboReward = true;
+            break;
+        case 'armor_expert':
+            player.upgradeArmorExpert = effect.totalValue || 0.3;
+            break;
+        case 'insight':
+            player.upgradeInsight = true;
+            player.insightCounter = 0;
+            break;
+
+        // === 气宗 ===
         case 'qi_internal_injury_mult':
-            GameState.player.qiInternalInjuryMult = effect.fixedValue;
+            player.qiInternalInjuryMult = effect.fixedValue;
             break;
         case 'qi_armor_break_on_injury':
-            GameState.player.qiArmorBreakOnInjury = true;
+            player.qiArmorBreakOnInjury = true;
             break;
         case 'qi_rapid_speed_boost':
-            GameState.player.qiRapidSpeedBoost = effect.totalValue;
+            player.qiRapidSpeedBoost = effect.totalValue;
             break;
         case 'qi_internal_crit':
-            GameState.player.qiInternalCritChance = effect.totalValue;
-            GameState.player.qiInternalCritMult = effect.critMult || 2.0;
+            player.qiInternalCritChance = effect.totalValue;
+            player.qiInternalCritMult = effect.critMult || 2.0;
             break;
+        case 'qi_surge':
+            player.qiSurge = true;
+            break;
+        case 'qi_blade':
+            player.qiBlade = true;
+            break;
+        case 'qi_injury_detonate_bonus':
+            player.qiInjuryDetonateBonus = true;
+            break;
+        case 'qi_chain_strike':
+            player.qiChainStrike = true;
+            break;
+        case 'qi_mountain_crush':
+            player.qiMountainCrush = true;
+            player.qiMountainCrushStacks = 0;
+            break;
+        case 'qi_inner_flow':
+            player.qiInnerFlow = true;
+            break;
+
+        // === 剑圣 ===
         case 'combo_multihit_bonus':
-            GameState.player.comboMultiHitBonus = (GameState.player.comboMultiHitBonus || 0) + effect.totalValue;
+            player.comboMultiHitBonus = (player.comboMultiHitBonus || 0) + effect.totalValue;
             break;
         case 'combo_gale_speed_bonus':
-            GameState.player.comboGaleSpeedBonus = effect.totalValue;
+            player.comboGaleSpeedBonus = effect.totalValue;
             break;
         case 'combo_chain_chance':
-            GameState.player.comboChainChanceBonus = effect.totalValue;
+            player.comboChainChanceBonus = effect.totalValue;
             break;
         case 'combo_finisher_consume_all':
-            GameState.player.comboFinisherConsumeAll = true;
+            player.comboFinisherConsumeAll = true;
             break;
+        case 'combo_blade_wind':
+            player.comboBladeWind = true;
+            break;
+        case 'combo_gale_guard':
+            player.comboGaleGuard = true;
+            break;
+        case 'combo_afterimage':
+            player.comboAfterimage = true;
+            break;
+
+        // === 魔导 ===
         case 'mana_overflow_atk_bonus':
-            GameState.player.manaOverflowAtkBonus = (GameState.player.manaOverflowAtkBonus || 0) + effect.totalValue;
+            player.manaOverflowAtkBonus = (player.manaOverflowAtkBonus || 0) + effect.totalValue;
             break;
         case 'mana_overflow_speed_bonus':
-            GameState.player.manaOverflowSpeedBonus = effect.totalValue;
+            player.manaOverflowSpeedBonus = effect.totalValue;
             break;
         case 'mana_reload_cost_reduction':
-            GameState.player.manaReloadCostReduction = effect.totalValue;
+            player.manaReloadCostReduction = effect.totalValue;
             break;
         case 'mana_full_overflow_burst_bonus':
-            GameState.player.manaFullOverflowBurstBonus = (GameState.player.manaFullOverflowBurstBonus || 0) + effect.totalValue;
+            player.manaFullOverflowBurstBonus = (player.manaFullOverflowBurstBonus || 0) + effect.totalValue;
             break;
+        case 'mana_ammo_recycle':
+            player.manaAmmoRecycle = true;
+            break;
+        case 'mana_flow':
+            player.manaFlow = true;
+            break;
+        case 'mana_piercing':
+            player.manaPiercing = true;
+            break;
+
+        // === 判官 ===
         case 'balance_contrast_bonus':
-            GameState.player.balanceContrastBonus = (GameState.player.balanceContrastBonus || 0) + effect.totalValue;
+            player.balanceContrastBonus = (player.balanceContrastBonus || 0) + effect.totalValue;
             break;
         case 'balance_extreme_cd':
-            GameState.player.extremeCD = Math.max(0, (GameState.player.extremeCD || 0) - 1);
-            GameState.player.balanceExtremeCDReduction = 1;
+            player.extremeCD = Math.max(0, (player.extremeCD || 0) - 1);
+            player.balanceExtremeCDReduction = 1;
             break;
         case 'balance_erosion_bonus':
-            GameState.player.balanceErosionBonus = (GameState.player.balanceErosionBonus || 0) + effect.totalValue;
+            player.balanceErosionBonus = (player.balanceErosionBonus || 0) + effect.totalValue;
             break;
         case 'balance_per_point_bonus':
-            GameState.player.balancePerPointBonus = (GameState.player.balancePerPointBonus || 0) + effect.totalValue;
+            player.balancePerPointBonus = (player.balancePerPointBonus || 0) + effect.totalValue;
+            break;
+        case 'balance_alternation':
+            player.balanceAlternation = true;
+            break;
+        case 'balance_erosion_spread':
+            player.balanceErosionSpread = true;
+            break;
+        case 'balance_yang_shield':
+            player.balanceYangShield = true;
+            break;
+        case 'balance_unity':
+            player.balanceUnity = true;
             break;
         default:
             break;

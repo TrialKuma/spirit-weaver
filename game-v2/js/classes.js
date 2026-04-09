@@ -200,6 +200,7 @@ class Character {
 }
 
 // A. 气宗 (Qi) - 蓄力爆发型
+// 内伤系统：可叠层（0-10），叠满后可引爆。高消耗技能叠内伤层数。
 class QiMaster extends Character {
     constructor(name, stats) {
         super('qi', name, stats);
@@ -207,8 +208,15 @@ class QiMaster extends Character {
             qi: { val: 10, max: 10, name: '气' }
         };
         this.qiInternalInjuryMult = 1.3;
+        this.qiSurge = false;
+        this.qiBlade = false;
+        this.qiChainStrike = false;
+        this.qiMountainCrush = false;
+        this.qiMountainCrushStacks = 0;
+        this.qiInnerFlow = false;
+        this.qiInjuryDetonateBonus = false;
         this.passive = {
-            desc: '消耗≥6点气的技能会为目标附加内伤，持续2回合（目标受到伤害提升30%）'
+            desc: '消耗≥6点气的技能为目标叠加3层【内伤】。内伤可叠加（上限10层），被引爆或达到上限时造成爆发伤害。'
         };
         this.initSkills();
     }
@@ -223,7 +231,31 @@ class QiMaster extends Character {
                 baseMultiplier: 1.0,
                 damage: this.baseAtk * 1.0,
                 tags: ['Light', 'Melee'],
-                desc: '基础拳法，不消耗气，造成100%攻击力伤害'
+                desc: '基础拳法，不消耗气，造成100%攻击力伤害',
+                onHit: (user, target) => {
+                    // 气刃升级：气≥8时轻击叠1层内伤
+                    if (user.qiBlade && user.resources.qi.val >= 8 && target) {
+                        this._addInjuryStacks(target, 1);
+                    }
+                    // 连环拳锤子：每hit叠内伤
+                    const hammer = user.skills.find(s => s.id === 'light_strike');
+                    if (hammer && hammer._activeHammer && hammer._activeHammer.morph.extra && hammer._activeHammer.morph.extra.stacksInjuryPerHit) {
+                        this._addInjuryStacks(target, hammer._activeHammer.morph.extra.stacksInjuryPerHit);
+                    }
+                    // 回气掌锤子
+                    if (hammer && hammer._activeHammer && hammer._activeHammer.morph.extra && hammer._activeHammer.morph.extra.qiRecoveryOnHit) {
+                        user.resources.qi.val = Math.min(10, user.resources.qi.val + hammer._activeHammer.morph.extra.qiRecoveryOnHit);
+                        Logger.log(`回气掌：气+${hammer._activeHammer.morph.extra.qiRecoveryOnHit}`);
+                        updateResourceUI();
+                    }
+                    // 轻击连环升级
+                    if (user.qiChainStrike) {
+                        user.addBuff({
+                            name: '连击加速', type: 'buff', stat: 'speed',
+                            value: 0.05, duration: 1, desc: '速度+5%'
+                        });
+                    }
+                }
             }),
             createSkill({
                 id: 'rapid_strike',
@@ -233,22 +265,31 @@ class QiMaster extends Character {
                 baseMultiplier: 2.0,
                 damage: this.baseAtk * 2.0,
                 tags: ['Special', 'Melee'],
-                desc: '消耗2气，造成200%攻击力伤害。若目标处于【内伤】状态，返还消耗的2气。',
+                desc: '消耗2气，造成200%攻击力伤害。目标有内伤时返还2气。',
                 onHit: (user, target) => {
-                    if (target.internalInjury > 0) {
+                    if (target && target.injuryStacks > 0) {
                         user.resources.qi.val = Math.min(10, user.resources.qi.val + 2);
-                        Logger.log('命中内伤！返还消耗的气', true);
+                        Logger.log('命中内伤目标！返还2气', true);
+                        if (user.qiInnerFlow) {
+                            user.resources.qi.val = Math.min(10, user.resources.qi.val + 1);
+                            Logger.log('内息循环：额外+1气');
+                        }
                         updateResourceUI();
                     }
                     if (user.qiRapidSpeedBoost) {
                         user.addBuff({
-                            name: '迅击-加速',
-                            type: 'buff',
-                            stat: 'speed',
-                            value: user.qiRapidSpeedBoost,
-                            duration: 1,
+                            name: '迅击-加速', type: 'buff', stat: 'speed',
+                            value: user.qiRapidSpeedBoost, duration: 1,
                             desc: `速度提升 ${(user.qiRapidSpeedBoost * 100).toFixed(0)}%`
                         });
+                    }
+                    // 裂伤击锤子
+                    const rapidSkill = user.skills.find(s => s.id === 'rapid_strike');
+                    if (rapidSkill && rapidSkill._activeHammer && rapidSkill._activeHammer.morph.extra) {
+                        const ext = rapidSkill._activeHammer.morph.extra;
+                        if (ext.stacksInjury && target) {
+                            this._addInjuryStacks(target, ext.stacksInjury);
+                        }
                     }
                 }
             }),
@@ -256,18 +297,71 @@ class QiMaster extends Character {
                 id: 'devastate',
                 name: '崩山',
                 type: 'Ultimate',
-                cost: { qi: 8 },
-                baseMultiplier: 5.0,
-                damage: this.baseAtk * 5.0,
+                cost: { qi: 6 },
+                baseMultiplier: 3.5,
+                damage: this.baseAtk * 3.5,
                 tags: ['Heavy', 'Ultimate', 'Melee'],
-                desc: '消耗8气，造成500%攻击力伤害 (Heavy)'
+                desc: '消耗6气，造成350%攻击力伤害。叠加3层内伤'
             })
         ];
     }
 
+    _addInjuryStacks(target, count) {
+        if (!target) return;
+        if (!target.injuryStacks) target.injuryStacks = 0;
+        const before = target.injuryStacks;
+        target.injuryStacks = Math.min(10, target.injuryStacks + count);
+        const added = target.injuryStacks - before;
+        if (added > 0) {
+            Logger.log(`内伤 +${added}层（当前${target.injuryStacks}/10）`, true);
+        }
+        // 叠满自动引爆
+        if (target.injuryStacks >= 10) {
+            this._detonateInjury(target);
+        }
+        // 兼容旧系统：保持 internalInjury > 0 供其他系统判断
+        target.internalInjury = target.injuryStacks > 0 ? 2 : 0;
+        updateBuffBars();
+    }
+
+    _detonateInjury(target) {
+        if (!target || !target.injuryStacks || target.injuryStacks <= 0) return 0;
+        const stacks = target.injuryStacks;
+        const detonateDmg = this.baseAtk * 0.6 * stacks * this.qiInternalInjuryMult;
+        target.injuryStacks = 0;
+        target.internalInjury = 0;
+
+        target.takeDamage(detonateDmg);
+        Logger.log(`内伤引爆（${stacks}层）！造成 ${detonateDmg.toFixed(1)} 点爆发伤害`, true);
+
+        if (this.qiArmorBreakOnInjury) {
+            target.addBuff({
+                name: '内伤-破防', type: 'debuff', stat: 'def',
+                value: -2, duration: 2, desc: '防御降低2'
+            });
+        }
+
+        const enemyPos = typeof getUnitCenter === 'function' ? getUnitCenter('enemy-box') : null;
+        if (enemyPos && typeof ParticleSystem !== 'undefined') {
+            ParticleSystem.showDamageNumber(enemyPos.x, enemyPos.y - 30, detonateDmg, '#ff0000', '引爆!',
+                { fontSize: '28px', holdMs: 600, fadeMs: 1200, floatDistance: 40 });
+            ParticleSystem.createImpact(enemyPos.x, enemyPos.y, 'ultimate', '#ff4400');
+            ParticleSystem.shakeScreen(8, 300);
+        }
+
+        if (target.hp <= 0 && !GameState.isBattleEnded && typeof winBattle === 'function') {
+            GameState.isBattleEnded = true;
+            winBattle();
+        }
+
+        updateBuffBars();
+        return detonateDmg;
+    }
+
     onTurnStart() {
-        this.resources.qi.val = Math.min(this.resources.qi.max, this.resources.qi.val + 2);
-        Logger.log(`气宗：气+2 (当前 ${this.resources.qi.val}/${this.resources.qi.max})`);
+        const qiGain = this.qiSurge ? 3 : 2;
+        this.resources.qi.val = Math.min(this.resources.qi.max, this.resources.qi.val + qiGain);
+        Logger.log(`气宗：气+${qiGain} (当前 ${this.resources.qi.val}/${this.resources.qi.max})`);
         updateResourceUI();
     }
 
@@ -286,11 +380,30 @@ class QiMaster extends Character {
             return false;
         }
 
+        let qiCost = skill.cost.qi || 0;
+
+        // 蓄力崩山锤子：消耗所有气
+        if (skill.id === 'devastate' && skill._activeHammer && skill._activeHammer.morph.extra && skill._activeHammer.morph.extra.consumeAllQi) {
+            qiCost = Math.max(skill.cost.qi || 6, this.resources.qi.val);
+            const extraQi = qiCost - (skill.cost.qi || 6);
+            const extraMult = extraQi * (skill._activeHammer.morph.extra.extraQiMultPerPoint || 0.5);
+            skill.calculatedDamage = this.getBuffedAtk() * (skill.baseMultiplier + extraMult);
+            Logger.log(`蓄力崩山！消耗 ${qiCost} 气，倍率 ${((skill.baseMultiplier + extraMult) * 100).toFixed(0)}%`);
+        }
+
         if (!(typeof hasInfiniteResources === 'function' && hasInfiniteResources())) {
-            this.resources.qi.val -= (skill.cost.qi || 0);
-            Logger.log(`使用 ${skill.name}，消耗 ${skill.cost.qi || 0} 气`);
+            this.resources.qi.val -= qiCost;
+            Logger.log(`使用 ${skill.name}，消耗 ${qiCost} 气`);
         } else {
             Logger.log(`使用 ${skill.name}（DEBUG：资源不消耗）`);
+        }
+
+        // 迅影锤子：推进行动条
+        if (skill._activeHammer && skill._activeHammer.morph.extra && skill._activeHammer.morph.extra.avAdvance) {
+            if (typeof CTBSystem !== 'undefined') {
+                CTBSystem.advanceUnitAV(this, skill._activeHammer.morph.extra.avAdvance);
+                Logger.log(`迅影推进行动条 ${(skill._activeHammer.morph.extra.avAdvance * 100).toFixed(0)}%`);
+            }
         }
 
         updateResourceUI();
@@ -298,40 +411,46 @@ class QiMaster extends Character {
     }
 
     onAction(action) {
-        if (action.type === 'skill' && action.skill && action.skill.cost && action.skill.cost.qi >= 6) {
+        if (action.type === 'skill' && action.skill && action.skill.cost && (action.skill.cost.qi || 0) >= 6) {
             if (GameState.enemy) {
-                GameState.enemy.internalInjury = 2;
-                Logger.log('目标进入【内伤】状态（2回合）', true);
-                if (this.qiArmorBreakOnInjury) {
-                    GameState.enemy.addBuff({
-                        name: '内伤-破防',
-                        type: 'debuff',
-                        stat: 'def',
-                        value: -2,
-                        duration: 2,
-                        desc: '防御降低2'
-                    });
+                this._addInjuryStacks(GameState.enemy, 3);
+
+                // 引爆锤子
+                const devSkill = this.skills.find(s => s.id === 'devastate');
+                if (devSkill && devSkill._activeHammer && devSkill._activeHammer.morph.extra && devSkill._activeHammer.morph.extra.detonateInjury) {
+                    if (action.skill.id === 'devastate') {
+                        this._detonateInjury(GameState.enemy);
+                    }
                 }
-                updateBuffBars();
+
+                // 破山势升级
+                if (this.qiMountainCrush && action.skill.id === 'devastate' && this.qiMountainCrushStacks < 3) {
+                    this.qiMountainCrushStacks++;
+                    GameState.enemy.def = Math.max(0, GameState.enemy.def - 1);
+                    Logger.log(`破山势！目标DEF永久-1（已减${this.qiMountainCrushStacks}次）`, true);
+                }
             }
         }
     }
 }
 
 // B. 剑圣 (Combo) - 行动积攒型
+// 疾风衰减：不攻击时每回合掉1层，被打掉2层
 class ComboMaster extends Character {
     constructor(name, stats) {
         super('combo', name, stats);
         this.resources = {
             combo: { val: 0, max: 10, name: '连击' }
         };
-        this.speedStacks = 0; // 速度层数
+        this.speedStacks = 0;
         this.comboGaleSpeedBonus = 0;
+        this.comboBladeWind = false;
+        this.comboGaleGuard = false;
+        this.comboAfterimage = false;
+        this._didActThisTurn = false;
+        this._extraActionUsed = false;
         this.passive = {
-            desc: '每次发动攻击叠加1层【疾风】(每层+10速度，满层+20%攻击)。满10层后不再叠加速度。',
-            onAction: (action) => {
-                 // 在 onAction 中处理叠层
-            }
+            desc: '每次攻击+1层【疾风】(每层+10速度,满10层+20%攻)。不攻击时每回合掉1层,被打掉2层。'
         };
         this.initSkills();
     }
@@ -373,21 +492,50 @@ class ComboMaster extends Character {
     }
 
     onTurnStart() {
+        // 疾风衰减：本回合没攻击则掉1层
+        if (!this._didActThisTurn && this.speedStacks > 0) {
+            this.speedStacks = Math.max(0, this.speedStacks - 1);
+            const perStack = 10 + (this.comboGaleSpeedBonus || 0);
+            this.speed = this.baseSpeed + this.speedStacks * perStack;
+            Logger.log(`【疾风】衰减！-1层（当前 ${this.speedStacks}层）`);
+        }
+        this._didActThisTurn = false;
+        this._extraActionUsed = false;
+
+        // 疾风护体：每层+1防御
+        if (this.comboGaleGuard && this.speedStacks > 0) {
+            this.def = 5 + this.speedStacks;
+        }
+        updateUI();
+    }
+
+    // 被打时掉疾风层数
+    takeDamage(damage) {
+        const died = super.takeDamage(damage);
+        if (this.speedStacks > 0 && damage > 0) {
+            const loss = Math.min(2, this.speedStacks);
+            this.speedStacks -= loss;
+            const perStack = 10 + (this.comboGaleSpeedBonus || 0);
+            this.speed = this.baseSpeed + this.speedStacks * perStack;
+            Logger.log(`【疾风】受击衰减-${loss}层（当前 ${this.speedStacks}层）`);
+            updateUI();
+        }
+        return died;
     }
 
     onAction(action) {
-        // 疾风叠层（被动：每次攻击叠1层）
+        this._didActThisTurn = true;
+
         if (action.type === 'skill' || action.type === 'attack') {
             if (this.speedStacks < 10) {
                 this.speedStacks++;
                 const perStack = 10 + (this.comboGaleSpeedBonus || 0);
-                this.speed = this.baseSpeed + this.speedStacks * perStack; // 基础300 + perStack*层数
+                this.speed = this.baseSpeed + this.speedStacks * perStack;
                 Logger.log(`【疾风】叠层！当前 ${this.speedStacks} 层，速度 ${this.speed}`);
                 updateUI();
             }
         }
         
-        // 疾风技能额外叠1层
         if (action.skill && action.skill.id === 'quick_strike') {
             if (this.speedStacks < 10) {
                 this.speedStacks++;
@@ -397,6 +545,8 @@ class ComboMaster extends Character {
                 updateUI();
             }
         }
+
+        // 刃风升级：满层时额外伤害（在main.js伤害计算中处理）
         
         // 连击积攒
         if (action.skill && action.skill.id !== 'finisher') {
@@ -456,19 +606,21 @@ class ManaMaster extends Character {
         this.manaOverflowSpeedBonus = 0;
         this.manaReloadCostReduction = 0;
         this.manaFullOverflowBurstBonus = 0;
+        this.manaAmmoRecycle = false;
+        this.manaFlow = false;
+        this.manaPiercing = false;
         this.passive = {
             desc: '每消耗2魔力获1层【盈能】(上限5，每层+5%攻)。攻击移除1层并回3魔力。',
             onAction: (action) => {
-                 // 攻击后移除层数并回魔
-                 // 排除装填(能量技) 和 过载爆射(noManaRegen)
                  if (action.type === 'skill' && 
                     action.skill.type !== 'Ultimate' &&
                      !action.skill.noManaRegen) { 
                      
                      if (this.stacks > 0) {
                          this.stacks--;
-                         this.resources.mana.val = Math.min(10, this.resources.mana.val + 3);
-                         Logger.log(`【盈能】消耗1层，魔力+3`);
+                         const manaReturn = this.manaFlow ? 4 : 3;
+                         this.resources.mana.val = Math.min(10, this.resources.mana.val + manaReturn);
+                         Logger.log(`【盈能】消耗1层，魔力+${manaReturn}`);
                          updateResourceUI();
                          updateBuffBars();
                      }
@@ -613,7 +765,12 @@ class BalanceMaster extends Character {
         };
         this.extremeState = null; // null | 'yang' | 'yin'
         this.extremePending = null; // 技能结算后标记，下回合激活
-        this.extremeCD = 0; // 极值CD（3次行动）
+        this.extremeCD = 0;
+        this.balanceAlternation = false;
+        this.balanceErosionSpread = false;
+        this.balanceYangShield = false;
+        this.balanceUnity = false;
+        this.karmaPool = 0;
         this.passive = {
             desc: '阳面(>0):全属性+10%/点 | 阴面(<0):敌方攻防-10%/点',
             onTurnStart: () => {}
@@ -829,12 +986,34 @@ class BalanceMaster extends Character {
             CTBSystem.advanceUnitAV(this, 0.15);
         }
 
+        // 阳极护盾升级
+        if (skill.id === 'yang_strike' && this.balanceYangShield && this.resources.balance.val > 0) {
+            const shieldVal = Math.floor(this.maxHp * 0.1 * this.resources.balance.val);
+            this.shield += shieldVal;
+            Logger.log(`阳极护盾 +${shieldVal}`);
+        }
+
+        // 阴阳交替升级：不同方向连续使用+50%
+        if (this.balanceAlternation && this._lastBalanceShift) {
+            const wasReverse = (this._lastBalanceShift > 0 && skill.balanceShift < 0) ||
+                               (this._lastBalanceShift < 0 && skill.balanceShift > 0);
+            if (wasReverse) {
+                dmg *= 1.5;
+                Logger.log('【阴阳交替】反方向加成 +50%！', true);
+            }
+        }
+
         // 侵蚀效果（阴击附加效果）
         if (skill.id === 'yin_strike' && GameState.enemy) {
-            const baseErosionMult = skill._deepErosion ? 0.4 : 0.2;
+            // 锤子覆写侵蚀参数
+            const yinHammer = skill._activeHammer && skill._activeHammer.morph ? skill._activeHammer.morph.extra : null;
+            const baseErosionMult = (yinHammer && yinHammer.deepErosion) ? (yinHammer.erosionMult || 0.4) :
+                                    skill._deepErosion ? 0.4 : 0.2;
             const erosionMult = baseErosionMult + (this.balanceErosionBonus || 0);
-            const erosionDuration = skill._deepErosion ? 2 : 1;
+            const erosionDuration = (yinHammer && yinHammer.deepErosion) ? (yinHammer.erosionDuration || 2) :
+                                    skill._deepErosion ? 2 : 1;
             const erosionDmg = Math.floor(this.baseAtk * erosionMult);
+
             GameState.enemy.addBuff({
                 name: skill._deepErosion ? '深渊侵蚀' : '侵蚀',
                 type: 'debuff',
@@ -844,6 +1023,23 @@ class BalanceMaster extends Character {
                 desc: `每回合受到${erosionDmg}点伤害`
             });
             Logger.log(`施加${skill._deepErosion ? '【深渊侵蚀】' : '【侵蚀】'}(${erosionDmg}/回合,${erosionDuration}回合)`, true);
+
+            // 阴极减速锤子
+            if (yinHammer && yinHammer.yinSlow && this.resources.balance.val < 0) {
+                const slowRatio = Math.abs(this.resources.balance.val) * (yinHammer.slowPerPoint || 0.1);
+                if (typeof delayUnitAV === 'function') {
+                    delayUnitAV(GameState.enemy, slowRatio);
+                    Logger.log(`阴极减速：推迟敌人行动 ${(slowRatio * 100).toFixed(0)}%`, true);
+                }
+            }
+        }
+
+        // 业力池：累计侵蚀伤害（在DOT结算时由 applyStartTurnBuffs 触发）
+        // 这里只标记判官有业力锤子
+        const verdictSkill = this.skills.find(s => s.id === 'verdict');
+        if (verdictSkill && verdictSkill._activeHammer &&
+            verdictSkill._activeHammer.morph.extra && verdictSkill._activeHammer.morph.extra.karmaVerdict) {
+            this._hasKarma = true;
         }
 
         skill.calculatedDamage = dmg;
@@ -854,9 +1050,23 @@ class BalanceMaster extends Character {
     }
 
     _consumeExtreme() {
-        this.extremeState = null;
-        this.extremePending = null;
-        this.extremeCD = 3 - (this.balanceExtremeCDReduction || 0);
+        const verdictSkill = this.skills.find(s => s.id === 'verdict');
+        const hasSamsara = verdictSkill && verdictSkill._activeHammer &&
+            verdictSkill._activeHammer.morph.extra && verdictSkill._activeHammer.morph.extra.samsara;
+
+        if (hasSamsara) {
+            // 轮回锤子：不进入CD，平衡推到反方向极值
+            const wasYang = this.extremeState === 'yang';
+            this.extremeState = null;
+            this.resources.balance.val = wasYang ? -5 : 5;
+            this.extremePending = wasYang ? 'yin' : 'yang';
+            this.extremeCD = 0;
+            Logger.log(`【轮回】平衡推到${wasYang ? '阴' : '阳'}极！`, true);
+        } else {
+            this.extremeState = null;
+            this.extremePending = null;
+            this.extremeCD = 3 - (this.balanceExtremeCDReduction || 0);
+        }
         this._updateVerdictSkill();
     }
 

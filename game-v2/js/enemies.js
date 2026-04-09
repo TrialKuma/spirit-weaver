@@ -38,8 +38,9 @@ class Enemy extends Character {
                      const debuffMult = target.getEnemyDebuffMultiplier ? target.getEnemyDebuffMultiplier() : 1.0;
                      if (debuffMult < 1.0) damage *= debuffMult;
                 }
-                // 自身虚弱检查 (如果有)
-                // ...
+                // 自身虚弱检查
+                const atkDebuffs = this.buffs ? this.buffs.filter(b => b.stat === 'atk' && b.value < 0) : [];
+                atkDebuffs.forEach(b => { damage *= (1 + b.value); });
 
                 let totalDamage = 0;
                 for (let i = 0; i < hits; i++) {
@@ -1013,10 +1014,121 @@ class VoidWeaver extends Enemy {
     }
 }
 
+// ==================== 额外普通敌人（3幕内容扩充）====================
+
+// 9. 寒霜元素 - 减速 + 自我加速联动
+class FrostElemental extends Enemy {
+    constructor() {
+        super('frost_elemental', '寒霜元素', { hp: 190, speed: 85, baseAtk: 11, def: 3 });
+        this.icon = '❄️';
+    }
+    planNextAction() {
+        const cycle = this.actionHistory.length % 3;
+        if (cycle === 0) {
+            this.nextAction = {
+                type: 'attack', value: this.baseAtk,
+                debuff: { name: '冻伤', type: 'debuff', stat: 'speed', value: -0.15, duration: 2, desc: '速度-15%' },
+                desc: `冰刺！造成 ${this.baseAtk} 伤害并冻伤`, icon: '❄️',
+                vfx: 'ranged', vfxColor: '#80deea'
+            };
+        } else if (cycle === 1) {
+            this.nextAction = {
+                type: 'buff', value: 0.2,
+                buff: { name: '寒气凝聚', type: 'buff', stat: 'speed', value: 0.2, duration: 2, desc: '速度+20%' },
+                desc: '寒气凝聚！自身速度提升', icon: '💨'
+            };
+        } else {
+            const dmg = Math.floor(this.baseAtk * 1.4);
+            this.nextAction = {
+                type: 'attack', value: dmg,
+                desc: `冰暴！造成 ${dmg} 伤害`, icon: '🌨️',
+                vfx: 'ranged', vfxColor: '#4fc3f7'
+            };
+        }
+    }
+}
+
+// 10. 腐蚀蘑菇 - 多层DOT堆叠
+class CorrosiveShroom extends Enemy {
+    constructor() {
+        super('corrosive_shroom', '腐蚀蘑菇', { hp: 170, speed: 65, baseAtk: 10, def: 4 });
+        this.icon = '🍄';
+    }
+    planNextAction() {
+        if (Math.random() < 0.6) {
+            const dmg = Math.floor(this.baseAtk * 0.6);
+            this.nextAction = {
+                type: 'attack', value: dmg,
+                debuff: { name: '腐蚀孢子', type: 'dot', value: 3, duration: 3, stackable: true },
+                desc: `孢子弹！造成 ${dmg} 伤害并叠加腐蚀`, icon: '🍄',
+                vfx: 'ranged', vfxColor: '#7cb342'
+            };
+        } else {
+            const shieldVal = Math.floor(this.maxHp * 0.12);
+            this.nextAction = {
+                type: 'buff', value: shieldVal,
+                buff: { name: '菌膜', type: 'shield', value: shieldVal },
+                desc: `分泌菌膜护盾（${shieldVal}点）`, icon: '🛡'
+            };
+        }
+    }
+}
+
+// 11. 雷光猎犬 - 高速多段
+class ThunderHound extends Enemy {
+    constructor() {
+        super('thunder_hound', '雷光猎犬', { hp: 150, speed: 120, baseAtk: 8, def: 1 });
+        this.icon = '⚡';
+    }
+    planNextAction() {
+        const hits = 2 + Math.floor(Math.random() * 2);
+        this.nextAction = {
+            type: 'attack', value: this.baseAtk, hits,
+            desc: `闪电撕咬（${this.baseAtk}×${hits}）`, icon: '⚡',
+            vfx: 'melee'
+        };
+    }
+}
+
+// 12. 石像鬼 - 超高防+阶段性暴露弱点
+class Gargoyle extends Enemy {
+    constructor() {
+        super('gargoyle', '石像鬼', { hp: 250, speed: 50, baseAtk: 16, def: 7 });
+        this.icon = '🗿';
+        this._awake = false;
+    }
+    planNextAction() {
+        const turn = this.actionHistory.length;
+        if (!this._awake && turn < 2) {
+            this.nextAction = {
+                type: 'defend', value: 3,
+                desc: '石化沉眠...防御大幅提升', icon: '🗿'
+            };
+        } else {
+            this._awake = true;
+            if (turn % 4 === 3) {
+                this.nextAction = {
+                    type: 'buff', value: 0,
+                    buff: { name: '裂缝', type: 'debuff', stat: 'def', value: -this.def, duration: 1, desc: '防御归零' },
+                    desc: '石化裂缝！弱点暴露！', icon: '💔'
+                };
+            } else {
+                const dmg = Math.floor(this.baseAtk * 1.3);
+                this.nextAction = {
+                    type: 'attack', value: dmg,
+                    desc: `巨拳砸落！造成 ${dmg} 伤害`, icon: '👊',
+                    vfx: 'melee'
+                };
+            }
+        }
+    }
+}
+
 // ==================== 敌人创建工厂 ====================
 
-// 普通敌人池
-const NormalEnemyPool = ['slime', 'goblin', 'beetle', 'crystal', 'snake', 'curse', 'rage', 'scout'];
+// 普通敌人池（扩充至12种）
+const NormalEnemyPool = ['slime', 'goblin', 'beetle', 'crystal', 'snake', 'curse', 'rage', 'scout',
+                         'frost', 'shroom', 'hound', 'gargoyle'];
 // 精英敌人池
 const EliteEnemyPool = ['shadow_blade', 'elemental_mage', 'soul_devourer', 'iron_bulwark'];
 // Boss 池
@@ -1045,6 +1157,10 @@ function createTestEnemy(type = 'random') {
         case 'curse': enemy = new CursePriest(); break;
         case 'rage': enemy = new RageBeast(); break;
         case 'scout': enemy = new SwiftScout(); break;
+        case 'frost': enemy = new FrostElemental(); break;
+        case 'shroom': enemy = new CorrosiveShroom(); break;
+        case 'hound': enemy = new ThunderHound(); break;
+        case 'gargoyle': enemy = new Gargoyle(); break;
         case 'shadow_blade': enemy = new ShadowBlade(); break;
         case 'elemental_mage': enemy = new ElementalMage(); break;
         case 'ancient_guardian': enemy = new AncientGuardian(); break;

@@ -189,13 +189,14 @@ function updateUI() {
     }
     updateDebugIndicator();
     
-    // 更新关卡显示（使用 RunManager）
+    // 更新关卡显示（使用 RunManager，含幕信息）
     const levelEl = document.getElementById('level-count');
     if (levelEl) {
         if (typeof RunManager !== 'undefined' && RunManager.nodes.length > 0) {
             const node = RunManager.getCurrentNode();
             const label = node ? node.label : '';
-            levelEl.textContent = `${RunManager.getProgressText()} ${label}`;
+            const actText = (typeof RunManager.getActText === 'function') ? RunManager.getActText() : '';
+            levelEl.textContent = `${RunManager.getProgressText()} ${actText} ${label}`;
         } else {
             levelEl.textContent = `${GameState.currentLevel}/${GameState.maxLevels || 4}`;
         }
@@ -458,8 +459,17 @@ function updateEnemyBuffs() {
     buffBar.innerHTML = '';
     const effects = [];
 
-    // 内伤
-    if (GameState.enemy.internalInjury > 0) {
+    // 内伤（叠层系统）
+    if (GameState.enemy.injuryStacks > 0) {
+        effects.push({
+            id: 'injuryStacks',
+            name: '内伤',
+            type: 'debuff',
+            icon: '💀',
+            desc: `内伤${GameState.enemy.injuryStacks}层/10。叠满或被引爆时造成爆发伤害`,
+            stack: GameState.enemy.injuryStacks
+        });
+    } else if (GameState.enemy.internalInjury > 0) {
         effects.push({
             id: 'internalInjury',
             name: '内伤',
@@ -1074,6 +1084,19 @@ function openUpgradeOverlay(options, onSelectCallback) {
         desc.innerHTML = option.displayDesc || option.desc;
         card.appendChild(desc);
 
+        // 关键词标签
+        if (option.keywords && option.keywords.length > 0) {
+            const kwContainer = document.createElement('div');
+            kwContainer.className = 'upgrade-keywords';
+            option.keywords.forEach(kw => {
+                const kwTag = document.createElement('span');
+                kwTag.className = 'upgrade-keyword-tag';
+                kwTag.textContent = kw;
+                kwContainer.appendChild(kwTag);
+            });
+            card.appendChild(kwContainer);
+        }
+
         // 职业标签
         if (option.classes && option.classes.length > 0) {
             const tag = document.createElement('div');
@@ -1081,6 +1104,15 @@ function openUpgradeOverlay(options, onSelectCallback) {
             const classNames = { qi: '气宗', combo: '剑圣', mana: '魔导', balance: '判官' };
             tag.textContent = classNames[option.classes[0]] || '';
             card.appendChild(tag);
+        }
+
+        // Tier标签
+        if (option.tier && option.tier !== 'base') {
+            const tierTag = document.createElement('div');
+            tierTag.className = `upgrade-tier-tag tier-${option.tier}`;
+            const tierNames = { synergy: '协同', keystone: '关键石', hammer: '锤子' };
+            tierTag.textContent = tierNames[option.tier] || option.tier;
+            card.appendChild(tierTag);
         }
 
         container.appendChild(card);

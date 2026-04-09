@@ -276,6 +276,9 @@ function initGame() {
     GameState.upgradesChosen = 0;
     GameState.upgradeLevels = {};
     GameState.isBattleEnded = false;
+    GameState.hammers = {};
+    GameState.hammersChosen = 0;
+    GameState.hammersPending = null;
 
     // 使用 RunManager 生成流程
     RunManager.generateRun();
@@ -348,6 +351,9 @@ function restartGame() {
     GameState.upgradesChosen = 0;
     GameState.isBattleEnded = false;
     GameState.upgradeLevels = {};
+    GameState.hammers = {};
+    GameState.hammersChosen = 0;
+    GameState.hammersPending = null;
     
     // 重置 CTB 速度
     lastActingSide = null;
@@ -357,6 +363,8 @@ function restartGame() {
     setActiveTurn(null);
     const gameoverOverlay = document.getElementById('gameover-overlay');
     if (gameoverOverlay) gameoverOverlay.remove();
+    const victoryOverlay = document.getElementById('victory-overlay');
+    if (victoryOverlay) victoryOverlay.remove();
     document.getElementById('timeline').innerHTML = '';
     document.getElementById('vfx-layer').innerHTML = '';
     if (ctbSystem._elMap) { ctbSystem._elMap.clear(); }
@@ -777,12 +785,17 @@ function enemyTurn(enemy) {
             if (enemy.updateBuffs) {
                 enemy.updateBuffs();
                 updateBuffBars();
-            } else {
+            }
+            // 内伤叠层系统：injuryStacks 不自动递减，只通过引爆/叠满消耗
+            // 保持 internalInjury 同步供旧判断使用
+            if (enemy.injuryStacks > 0) {
+                enemy.internalInjury = 2;
+            } else if (!enemy.injuryStacks) {
                 if (enemy.internalInjury && enemy.internalInjury > 0) {
                     enemy.internalInjury--;
-                    updateBuffBars();
                 }
             }
+            updateBuffBars();
 
             if (enemy.planNextAction) {
                 enemy.planNextAction();
@@ -912,37 +925,70 @@ function usePlayerSkill(skillId) {
         baseDamage = preSkillContext.baseDamage;
     }
     
-    // 剑圣疾风满层加成 (不修改skill对象，在此处应用)
+    // 剑圣疾风满层加成
     if (GameState.player.classId === 'combo' && GameState.player.speedStacks >= 10) {
         baseDamage *= 1.2;
+    }
+
+    // 通用升级：绝境反击
+    if (GameState.player.upgradeDesperationMult && GameState.player.hp < GameState.player.maxHp * 0.3) {
+        baseDamage *= (1 + GameState.player.upgradeDesperationMult);
+    }
+
+    // 通用升级：破甲专精
+    if (GameState.player.upgradeArmorExpert && GameState.enemy && (GameState.enemy.def || 0) > 3) {
+        baseDamage *= (1 + GameState.player.upgradeArmorExpert);
+    }
+
+    // 剑圣刃风：满层时每次攻击额外造成30%攻击力伤害
+    if (GameState.player.classId === 'combo' && GameState.player.comboBladeWind && GameState.player.speedStacks >= 10) {
+        baseDamage += GameState.player.getBuffedAtk() * 0.3;
+    }
+
+    // 裂伤击锤子：内伤目标+50%伤害
+    if (skill._activeHammer && skill._activeHammer.morph && skill._activeHammer.morph.extra) {
+        const ext = skill._activeHammer.morph.extra;
+        if (ext.injuryBonusMult && GameState.enemy && GameState.enemy.injuryStacks > 0) {
+            baseDamage *= ext.injuryBonusMult;
+        }
     }
 
     // 剑圣连斩的概率连击逻辑
     let actualHits = skill.hits || 1;
     if (skill.id === 'combo_strike') {
-        actualHits = 1; // 第一击必定命中
-        // 最多追加 4 次 (总共 5 次)
-        for (let i = 0; i < 4; i++) {
-            const chance = 0.6 + (GameState.player.comboChainChanceBonus || 0);
-            if (Math.random() < chance) {
-                actualHits++;
-            } else {
-                break;
+        const hammerExt = skill._activeHammer && skill._activeHammer.morph ? skill._activeHammer.morph.extra : null;
+
+        if (hammerExt && hammerExt.endlessChain) {
+            // 无尽连斩锤子：无上限，起始50%逐步递减
+            actualHits = 1;
+            let chance = hammerExt.baseChance || 0.5;
+            while (chance > 0.01) {
+                if (Math.random() < chance) {
+                    actualHits++;
+                    chance -= (hammerExt.decayPerHit || 0.05);
+                } else {
+                    break;
+                }
+            }
+        } else {
+            actualHits = 1;
+            for (let i = 0; i < 4; i++) {
+                const chance = 0.6 + (GameState.player.comboChainChanceBonus || 0);
+                if (Math.random() < chance) {
+                    actualHits++;
+                } else {
+                    break;
+                }
             }
         }
         Logger.log(`连斩触发 ${actualHits} 次攻击`);
     }
 
-    // 魔导爆射不再需要特殊逻辑，改为单发高伤（已在 classes.js 配置）
-
-    
     // 计算总伤害
     let totalDamage = baseDamage;
     if (skill.calculatedDamage === undefined && skill.hits && skill.hits > 1) {
-        // damage是单发伤害
         totalDamage = baseDamage * actualHits;
     } else if (skill.calculatedDamage !== undefined) {
-        // calculatedDamage是总伤害
         if (skill.id === 'burst') {
             const singleHitDmg = baseDamage / (skill.hits || 1);
             totalDamage = singleHitDmg * actualHits;
@@ -1065,6 +1111,24 @@ function usePlayerSkill(skillId) {
         
         // 更新所有 Buff 持续时间 (回合结束时)
         GameState.player.updateBuffs();
+
+        // 战场洞察：每5回合获得暴击buff
+        if (GameState.player && GameState.player.upgradeInsight) {
+            GameState.player.insightCounter = (GameState.player.insightCounter || 0) + 1;
+            if (GameState.player.insightCounter >= 5) {
+                GameState.player.insightCounter = 0;
+                GameState.player.critChance = (GameState.player.critChance || 0) + 0.5;
+                GameState.player.critMult = 1.5;
+                Logger.log('【洞察】激活！下一击必定暴击(x1.5)', true);
+            }
+        }
+
+        // 连击奖励：3hit以上回复5%生命
+        if (GameState.player && GameState.player.upgradeComboReward && actualHits >= 3) {
+            const heal = Math.floor(GameState.player.maxHp * 0.05);
+            GameState.player.hp = Math.min(GameState.player.maxHp, GameState.player.hp + heal);
+            Logger.log(`连击奖励：回复 ${heal} 点生命`);
+        }
 
         GameState.isPlayerTurn = false;
         GameState.isProcessingSkill = false;
@@ -1602,10 +1666,113 @@ function advanceToNextNode() {
 
     if (node.type === 'rest') {
         handleRestNode();
+    } else if (node.type === 'hammer') {
+        handleHammerNode();
     } else {
-        // battle / elite / boss
         startNextBattle();
     }
+}
+
+// 锤子节点
+function handleHammerNode() {
+    Logger.log(`到达锻造点（节点 ${RunManager.getProgressText()}）`, true);
+    if (typeof AudioManager !== 'undefined') {
+        AudioManager.stopBgm();
+    }
+
+    const classId = GameState.player ? GameState.player.classId : 'qi';
+    const options = (typeof getRandomHammers === 'function') ? getRandomHammers(classId, 3) : [];
+
+    if (options.length === 0) {
+        Logger.log('没有可用的锤子，继续前进', true);
+        advanceToNextNode();
+        return;
+    }
+
+    showHammerChoice(options, (chosen) => {
+        if (chosen && typeof applyHammerToPlayer === 'function') {
+            applyHammerToPlayer(chosen);
+        }
+        advanceToNextNode();
+    });
+}
+
+// 锤子选择UI
+function showHammerChoice(options, onChosen) {
+    const overlay = document.getElementById('upgrade-overlay');
+    const container = document.getElementById('upgrade-options');
+    if (!overlay || !container) {
+        if (onChosen) onChosen(null);
+        return;
+    }
+
+    if (typeof AudioManager !== 'undefined') AudioManager.playUi('open');
+
+    GameState.isPaused = true;
+    GameState.isUpgradeOpen = true;
+    overlay.style.pointerEvents = 'auto';
+
+    const titleEl = overlay.querySelector('.upgrade-title');
+    if (titleEl) titleEl.textContent = '锻造 — 选择锤子';
+
+    container.innerHTML = '';
+
+    options.forEach(hammer => {
+        const card = document.createElement('div');
+        card.className = 'upgrade-card rarity-SSR hammer-card';
+
+        if (typeof AudioManager !== 'undefined') {
+            AudioManager.bindUiSound(card, { hover: 'hover', click: 'confirm' });
+        }
+
+        card.onclick = () => {
+            closeUpgradeOverlay();
+            if (titleEl) titleEl.textContent = '强化选择';
+            if (onChosen) onChosen(hammer);
+        };
+
+        const iconEl = document.createElement('div');
+        iconEl.className = 'upgrade-icon hammer-icon';
+        iconEl.textContent = hammer.icon || '🔨';
+        card.appendChild(iconEl);
+
+        const name = document.createElement('div');
+        name.className = 'upgrade-name';
+        name.innerHTML = `${hammer.name} <span class="upgrade-rarity-badge SSR">锤子</span>`;
+        card.appendChild(name);
+
+        const desc = document.createElement('div');
+        desc.className = 'upgrade-desc';
+        desc.textContent = hammer.desc;
+        card.appendChild(desc);
+
+        const targetTag = document.createElement('div');
+        targetTag.className = 'upgrade-class-tag';
+        const skillNames = { light_strike: '轻击', rapid_strike: '迅击', devastate: '崩山',
+            quick_strike: '疾风', combo_strike: '连斩', finisher: '终结技',
+            shoot: '射击', burst: '爆射', reload: '装填',
+            yang_strike: '阳击', yin_strike: '阴击', verdict: '宣判' };
+        targetTag.textContent = `改造：${skillNames[hammer.targetSkill] || hammer.targetSkill}`;
+        card.appendChild(targetTag);
+
+        container.appendChild(card);
+    });
+
+    const skipBtn = document.getElementById('upgrade-skip');
+    if (skipBtn) {
+        const newSkipBtn = skipBtn.cloneNode(true);
+        skipBtn.parentNode.replaceChild(newSkipBtn, skipBtn);
+        if (typeof AudioManager !== 'undefined') {
+            AudioManager.bindUiSound(newSkipBtn, { hover: 'hover', click: 'skip' });
+        }
+        newSkipBtn.addEventListener('click', () => {
+            closeUpgradeOverlay();
+            if (titleEl) titleEl.textContent = '强化选择';
+            if (onChosen) onChosen(null);
+        });
+    }
+
+    overlay.classList.remove('hidden');
 }
 
 function resetPlayerForNewBattle(player) {
@@ -1624,6 +1791,7 @@ function resetPlayerForNewBattle(player) {
             if (player.resources.qi) {
                 player.resources.qi.val = player.resources.qi.max;
             }
+            player.qiMountainCrushStacks = 0;
             break;
         case 'combo':
             if (player.resources.combo) {
@@ -1631,6 +1799,8 @@ function resetPlayerForNewBattle(player) {
             }
             player.speedStacks = 0;
             player.speed = player.baseSpeed;
+            player._didActThisTurn = false;
+            player._extraActionUsed = false;
             break;
         case 'mana':
             if (player.resources.mana) {
@@ -1654,6 +1824,7 @@ function resetPlayerForNewBattle(player) {
             player.extremePending = null;
             player.extremeCD = 0;
             player._lastBalanceShift = 0;
+            player.karmaPool = 0;
             if (typeof player._updateVerdictSkill === 'function') {
                 player._updateVerdictSkill();
             }
@@ -1711,6 +1882,19 @@ function startNextBattle() {
         GameState.enemy.planNextAction();
     }
     
+    // 先手优势升级：战斗开始获得加速buff
+    if (GameState.player && GameState.player.upgradeFirstStrike) {
+        GameState.player.addBuff({
+            name: '先手优势', type: 'buff', stat: 'speed',
+            value: 0.3, duration: 1, desc: '速度+30%（1回合）'
+        });
+    }
+
+    // 重置洞察计数
+    if (GameState.player && GameState.player.upgradeInsight) {
+        GameState.player.insightCounter = 0;
+    }
+
     GameState.isPaused = false;
     if (typeof AudioManager !== 'undefined' && GameState.player) {
         AudioManager.playBattleBgm(GameState.player.classId, node ? node.type : 'battle');
@@ -1742,28 +1926,46 @@ function startNextLevel() {
 // 通关胜利
 function victoryGame() {
     GameState.isRunning = false;
+    GameState.isPaused = true;
     if (typeof AudioManager !== 'undefined') {
         AudioManager.stopBgm();
         AudioManager.playUi('success');
     }
-    const overlay = document.getElementById('upgrade-overlay');
-    if (overlay) {
-        overlay.classList.remove('hidden');
-        overlay.innerHTML = `
-            <div style="text-align: center; color: white; padding: 40px;">
-                <h1 style="color: #ffd54f; font-size: 32px; margin-bottom: 20px;">通关成功</h1>
-                <div style="font-size: 16px; line-height: 2; color: #e0e0e0;">
-                    <div>通过了全部 ${RunManager.nodes.length} 个节点</div>
-                    <div>战斗回合: ${GameState.turnCount}</div>
-                    <div>获得强化: ${GameState.upgradesChosen} 个</div>
-                    <div>积累金币: ${RunManager.gold}</div>
-                </div>
-                <button onclick="location.reload()" style="margin-top: 30px; padding: 12px 30px; font-size: 18px; cursor: pointer; background: #1a1a2e; color: #ffd54f; border: 1px solid #ffd54f; border-radius: 8px;">返回主菜单</button>
-            </div>
-        `;
+
+    // 构建已装备锤子列表
+    let hammerSummary = '';
+    const equippedHammers = GameState.hammers || {};
+    const hammerNames = Object.values(equippedHammers).map(h => h.name);
+    if (hammerNames.length > 0) {
+        hammerSummary = `<div style="margin-top:12px;padding:8px;border:1px solid rgba(255,213,79,0.3);border-radius:6px;background:rgba(255,213,79,0.05);">
+            <div style="color:#ffd54f;font-size:13px;margin-bottom:4px;">锻造记录</div>
+            <div style="color:#e0e0e0;font-size:12px;">${hammerNames.join(' · ')}</div>
+        </div>`;
     }
 
-    const returnBtn = overlay ? overlay.querySelector('button') : null;
+    let overlay = document.getElementById('victory-overlay');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'victory-overlay';
+        overlay.className = 'gameover-overlay';
+        document.body.appendChild(overlay);
+    }
+    overlay.innerHTML = `
+        <div class="gameover-panel" style="border-color: #ffd54f;">
+            <div class="gameover-title" style="color: #ffd54f;">通关成功</div>
+            <div class="gameover-stats">
+                <div>通过了全部 ${RunManager.nodes.length} 个节点（3幕）</div>
+                <div>战斗回合: ${GameState.turnCount}</div>
+                <div>获得强化: ${GameState.upgradesChosen} 个</div>
+                <div>获得锤子: ${GameState.hammersChosen || 0} 个</div>
+                <div>积累金币: ${RunManager.gold}</div>
+                ${hammerSummary}
+            </div>
+            <button class="gameover-button" style="border-color:#ffd54f;color:#ffd54f;" onclick="document.getElementById('victory-overlay').remove(); restartGame();">返回主菜单</button>
+        </div>
+    `;
+
+    const returnBtn = overlay.querySelector('.gameover-button');
     if (returnBtn && typeof AudioManager !== 'undefined') {
         AudioManager.bindUiSound(returnBtn, { hover: 'hover', click: 'confirm' });
     }

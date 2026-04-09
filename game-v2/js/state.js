@@ -19,6 +19,10 @@ const GameState = {
     maxLevels: 4,
     spiritChoiceGranted: false,
     followUpPending: null, // { followUps: [], callback: fn } — 追加技能等待选择
+    hammers: {},          // { skillId: hammerConfig } — 已装备的锤子（每技能至多1个）
+    hammersPending: null,  // { options: [], callback: fn } — 锤子选择待决
+    hammersChosen: 0,      // 本局已获得锤子数
+    isBattleEnded: false,
     debug: {
         enabled: false,
         infiniteResources: true
