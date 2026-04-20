@@ -188,19 +188,116 @@ function updateUI() {
         updateSpiritFrame();
     }
     updateDebugIndicator();
-    
-    // 更新关卡显示（使用 RunManager，含幕信息）
+    updateSkillDamageStatsPanel();
+
+    // 更新关卡显示（使用 RunManager 分支地图）
     const levelEl = document.getElementById('level-count');
     if (levelEl) {
-        if (typeof RunManager !== 'undefined' && RunManager.nodes.length > 0) {
+        if (typeof RunManager !== 'undefined' && RunManager.acts.length > 0) {
             const node = RunManager.getCurrentNode();
             const label = node ? node.label : '';
             const actText = (typeof RunManager.getActText === 'function') ? RunManager.getActText() : '';
-            levelEl.textContent = `${RunManager.getProgressText()} ${actText} ${label}`;
+            levelEl.textContent = `${actText} · ${label}`;
         } else {
             levelEl.textContent = `${GameState.currentLevel}/${GameState.maxLevels || 4}`;
         }
     }
+
+    // 同步战斗背景：按 currentLevel(1..4) 切换 main-stage 的背景图
+    updateBattleBackground();
+    // 同步玩家立绘：按 player.classId 切换
+    updatePlayerPortrait();
+}
+
+// 战斗背景按关卡切换；超出 1..4 则循环回 1
+function updateBattleBackground() {
+    const stageEl = document.querySelector('.main-stage');
+    if (!stageEl) return;
+    const lvl = Math.max(1, Number(GameState.currentLevel) || 1);
+    const stageIdx = ((lvl - 1) % 4) + 1;
+    if (stageEl.dataset.stage !== String(stageIdx)) {
+        stageEl.dataset.stage = String(stageIdx);
+    }
+}
+
+// 玩家立绘按职业切换
+const PLAYER_PORTRAIT_MAP = {
+    qi:      'assets/art/portraits/portrait_qi.png',
+    combo:   'assets/art/portraits/portrait_combo.png',
+    mana:    'assets/art/portraits/portrait_mana.png',
+    balance: 'assets/art/portraits/portrait_balance.png',
+};
+function updatePlayerPortrait() {
+    const img = document.getElementById('player-portrait');
+    const box = document.getElementById('player-box');
+    if (!img || !box) return;
+    const classId = GameState.player && GameState.player.classId;
+    const src = PLAYER_PORTRAIT_MAP[classId];
+    if (!src) {
+        img.removeAttribute('src');
+        img.classList.remove('loaded');
+        box.classList.remove('has-portrait');
+        img.removeAttribute('data-class');
+        return;
+    }
+    // 仅当 src 真正变化时更新（避免每帧 reload 闪烁）
+    if (img.dataset.class !== classId) {
+        img.dataset.class = classId;
+        img.classList.remove('loaded');
+        img.onload = () => img.classList.add('loaded');
+        img.src = src;
+        box.classList.add('has-portrait');
+    }
+}
+
+function updateSkillDamageStatsPanel() {
+    const host = document.getElementById('damage-stats-panel');
+    const list = document.getElementById('damage-stats-list');
+    if (!host || !list) return;
+
+    const show =
+        GameState.isRunning &&
+        GameState.player &&
+        GameState.enemy &&
+        GameState.skillDamageStats &&
+        GameState.skillDamageStats.entries;
+
+    if (!show) {
+        host.style.display = 'none';
+        list.innerHTML = '';
+        return;
+    }
+
+    host.style.display = 'flex';
+    const { entries, order } = GameState.skillDamageStats;
+    const rows = order
+        .map(key => ({ key, label: entries[key].label, total: entries[key].total }))
+        .filter(r => r.total > 0)
+        .sort((a, b) => b.total - a.total);
+
+    list.innerHTML = '';
+    if (rows.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'damage-stats-empty';
+        empty.textContent = '尚无伤害记录';
+        list.appendChild(empty);
+        return;
+    }
+
+    rows.forEach(r => {
+        const row = document.createElement('div');
+        row.className = 'damage-stats-row';
+        const nameEl = document.createElement('span');
+        nameEl.className = 'damage-stats-name';
+        nameEl.textContent = r.label;
+        nameEl.title = r.label;
+        const numEl = document.createElement('span');
+        numEl.className = 'damage-stats-num';
+        numEl.textContent = Math.round(r.total).toString();
+        row.appendChild(nameEl);
+        row.appendChild(numEl);
+        list.appendChild(row);
+    });
 }
 
 function updateDebugIndicator() {
@@ -329,10 +426,16 @@ function updateEnemyIntent() {
                 valueClass = 'intent-frame-value muted';
             }
         }
-        valueEl.textContent = dmg;
+        const hits = action.hits || 1;
+        valueEl.textContent = hits > 1 ? `${dmg}×${hits}` : dmg;
         valueEl.className = valueClass;
     } else if (action.value > 0) {
-        valueEl.textContent = action.value;
+        // 小数值（0~1）视为百分比显示
+        if (action.value > 0 && action.value < 1) {
+            valueEl.textContent = Math.round(action.value * 100) + '%';
+        } else {
+            valueEl.textContent = action.value;
+        }
         valueEl.className = 'intent-frame-value heal';
     } else {
         valueEl.textContent = '';
@@ -356,7 +459,7 @@ function updatePlayerBuffs() {
     buffBar.innerHTML = '';
     const buffs = [];
 
-    // 剑圣：疾风
+    // 剑圣（旧）：疾风
     if (GameState.player.classId === 'combo' && GameState.player.speedStacks > 0) {
         const stacks = GameState.player.speedStacks;
         const atkBonus = stacks >= 10 ? '，满层+20%攻击' : '';
@@ -366,6 +469,20 @@ function updatePlayerBuffs() {
             type: 'buff',
             icon: '💨',
             desc: `每层+10速度${atkBonus}（当前${stacks}层）`,
+            stack: stacks
+        });
+    }
+
+    // 连击魂：疾风（由魂灵管理）
+    const cSpirit = GameState.spirit;
+    if (cSpirit && cSpirit.id === 'combo_spirit' && (cSpirit.state.galeStacks || 0) > 0) {
+        const stacks = cSpirit.state.galeStacks;
+        buffs.push({
+            id: 'combo_spirit_gale',
+            name: '疾风',
+            type: 'buff',
+            icon: '⚡',
+            desc: `连击魂疾风：每层+10速度（当前${stacks}/10层）`,
             stack: stacks
         });
     }
@@ -459,24 +576,20 @@ function updateEnemyBuffs() {
     buffBar.innerHTML = '';
     const effects = [];
 
-    // 内伤（叠层系统）
-    if (GameState.enemy.injuryStacks > 0) {
+    // 内伤（新系统：气息魂管理，spiritInjury字段）
+    if ((GameState.enemy.spiritInjury || 0) > 0) {
+        const vuln = GameState.enemy.spiritInjuryVuln || 1.2;
+        const spirit = GameState.spirit;
+        const isExplosion = spirit && spirit.state && spirit.state.branchMode === 'explosion';
         effects.push({
-            id: 'injuryStacks',
+            id: 'spiritInjury',
             name: '内伤',
             type: 'debuff',
-            icon: '💀',
-            desc: `内伤${GameState.enemy.injuryStacks}层/10。叠满或被引爆时造成爆发伤害`,
-            stack: GameState.enemy.injuryStacks
-        });
-    } else if (GameState.enemy.internalInjury > 0) {
-        effects.push({
-            id: 'internalInjury',
-            name: '内伤',
-            type: 'debuff',
-            icon: '💀',
-            desc: `受到的攻击伤害提升30%（剩余${GameState.enemy.internalInjury}回合）`,
-            stack: GameState.enemy.internalInjury
+            icon: '💢',
+            desc: isExplosion
+                ? `内伤${GameState.enemy.spiritInjury}/3层。叠满时触发内爆（300%）`
+                : `下次受击伤害+${Math.round((vuln - 1) * 100)}%（${GameState.enemy.spiritInjury}层）`,
+            stack: GameState.enemy.spiritInjury
         });
     }
 
@@ -568,6 +681,56 @@ function updateEnemyBuffs() {
     });
 }
 
+// 资源 key → 图标路径映射
+const _resourceIconMap = {
+    'qi': 'assets/art/icons/resources/res_qi_v2.png',
+    'combo': 'assets/art/icons/resources/res_combo_v2.png',
+    'mana': 'assets/art/icons/resources/res_mana_v2.png',
+    'ammo': 'assets/art/icons/resources/res_ammo_v2.png',
+    'balance': 'assets/art/icons/resources/res_balance_v2.png'
+};
+
+// 创建一个完整资源 block（图标 + 名称 + 格子条），统一容器
+// resourceKey: 用于图标查找 + class 标记
+// displayName: 显示在图标下方的名称
+// gridEl: 已构建好的格子 DOM
+// stateClass: 'empty' | 'full' | 'normal'，控制状态反馈样式
+function _createResourceBlock(resourceKey, displayName, gridEl, stateClass = 'normal') {
+    const block = document.createElement('div');
+    block.className = `resource-block resource-block-${resourceKey} ${stateClass}`;
+
+    const iconSrc = _resourceIconMap[resourceKey];
+    if (iconSrc) {
+        const icon = document.createElement('img');
+        icon.src = iconSrc;
+        icon.alt = resourceKey;
+        icon.className = 'resource-block-icon';
+        icon.draggable = false;
+        block.appendChild(icon);
+    }
+
+    const name = document.createElement('div');
+    name.className = 'resource-block-name';
+    name.textContent = displayName;
+    block.appendChild(name);
+
+    if (gridEl) {
+        const valueWrap = document.createElement('div');
+        valueWrap.className = 'resource-block-value';
+        valueWrap.appendChild(gridEl);
+        block.appendChild(valueWrap);
+    }
+
+    return block;
+}
+
+// 根据值/上限判定状态
+function _resourceState(val, max) {
+    if (val <= 0) return 'empty';
+    if (max && val >= max) return 'full';
+    return 'normal';
+}
+
 // 资源 UI 渲染
 function updateResourceUI() {
     const panel = document.getElementById('resource-panel');
@@ -588,27 +751,20 @@ function updateResourceUI() {
     };
     const colorClass = classColors[classId] || 'qi';
     
-    // 根据角色类型渲染不同的资源显示
+    // 多资源横排容器
+    const blocksRow = document.createElement('div');
+    blocksRow.className = 'resource-blocks-row';
+
     if (GameState.player.classId === 'balance') {
-        // 判官：10格 + 中线，左5阴（紫），右5阳（白/暖）
+        // 判官：阴阳双向，5阴+5阳，中线分隔。状态由 |val| 是否极值决定
         const balance = resources.balance;
-        const display = document.createElement('div');
-        display.className = 'resource-display';
-        display.style.flexDirection = 'column';
-        display.style.gap = '5px';
-
-        const label = document.createElement('div');
-        label.textContent = `${balance.name}: ${balance.val}`;
-        label.style.cssText = 'font-size:11px;color:var(--text-secondary);letter-spacing:1px;';
-
         const grid = document.createElement('div');
         grid.className = 'resource-grid balance';
 
-        // 左5格：阴 (对应 -5 到 -1)
         for (let i = 0; i < 5; i++) {
             const cell = document.createElement('div');
             cell.className = 'resource-cell';
-            const threshold = -(5 - i); // -5, -4, -3, -2, -1
+            const threshold = -(5 - i);
             if (balance.val <= threshold) {
                 cell.classList.add('active', 'balance-yin');
             } else {
@@ -617,16 +773,14 @@ function updateResourceUI() {
             grid.appendChild(cell);
         }
 
-        // 中线分隔
         const centerLine = document.createElement('div');
         centerLine.className = 'balance-center-line';
         grid.appendChild(centerLine);
 
-        // 右5格：阳 (对应 +1 到 +5)
         for (let i = 0; i < 5; i++) {
             const cell = document.createElement('div');
             cell.className = 'resource-cell';
-            const threshold = i + 1; // 1, 2, 3, 4, 5
+            const threshold = i + 1;
             if (balance.val >= threshold) {
                 cell.classList.add('active', 'balance-yang');
             } else {
@@ -635,74 +789,94 @@ function updateResourceUI() {
             grid.appendChild(cell);
         }
 
-        display.appendChild(label);
-        display.appendChild(grid);
-        panel.appendChild(display);
+        // 极值状态特殊反馈
+        let stateClass = 'normal';
+        if (balance.val >= 5) stateClass = 'full balance-yang-extreme';
+        else if (balance.val <= -5) stateClass = 'full balance-yin-extreme';
+
+        const block = _createResourceBlock('balance', balance.name, grid, stateClass);
+        blocksRow.appendChild(block);
     } else {
-        // 其他角色：显示资源格子
+        // 其他角色：每个资源一个 block
         Object.keys(resources).forEach(key => {
-            // 跳过弹药，弹药会单独处理
-            if (key === 'ammo') return;
-            
+            if (key === 'ammo') return; // 弹药单独处理
+
             const res = resources[key];
-            const display = document.createElement('div');
-            display.className = 'resource-display';
-            display.style.flexDirection = 'column';
-            display.style.gap = '5px';
-            
-            const label = document.createElement('div');
-            label.textContent = res.name;
-            label.style.cssText = 'font-size:11px;color:var(--text-secondary);letter-spacing:1px;';
-            
-            // 创建10个格子
             const grid = document.createElement('div');
             grid.className = `resource-grid ${colorClass}`;
-            
             const maxCells = res.max || 10;
             for (let i = 0; i < maxCells; i++) {
                 const cell = document.createElement('div');
                 cell.className = `resource-cell ${colorClass}`;
-                if (i < res.val) {
-                    cell.classList.add('active');
-                } else {
-                    cell.classList.add('inactive');
-                }
+                if (i < res.val) cell.classList.add('active');
+                else cell.classList.add('inactive');
                 grid.appendChild(cell);
             }
-            
-            display.appendChild(label);
-            display.appendChild(grid);
-            panel.appendChild(display);
+            const stateClass = _resourceState(res.val, res.max);
+            const block = _createResourceBlock(key, res.name, grid, stateClass);
+            blocksRow.appendChild(block);
         });
-        
-        // 如果有弹药资源，单独显示一行（只显示已有弹药，不显示空位）
+
+        // 弹药 block：金黄圆形，独立颜色与魔力区分
         if (resources.ammo) {
             const ammoRes = resources.ammo;
-            const ammoDisplay = document.createElement('div');
-            ammoDisplay.className = 'resource-display';
-            ammoDisplay.style.flexDirection = 'column';
-            ammoDisplay.style.gap = '5px';
-            
-            const ammoLabel = document.createElement('div');
-            ammoLabel.textContent = ammoRes.name;
-            ammoLabel.style.cssText = 'font-size:11px;color:var(--text-secondary);letter-spacing:1px;';
-            
             const ammoGrid = document.createElement('div');
-            ammoGrid.className = `resource-grid ${colorClass}`;
-            
-            // 只显示已有弹药，不显示空位
+            ammoGrid.className = 'resource-grid ammo-grid';
             for (let i = 0; i < ammoRes.val; i++) {
                 const cell = document.createElement('div');
-                cell.className = `resource-cell ${colorClass} active`;
+                cell.className = 'resource-cell ammo active';
                 ammoGrid.appendChild(cell);
             }
-            
-            ammoDisplay.appendChild(ammoLabel);
-            ammoDisplay.appendChild(ammoGrid);
-            panel.appendChild(ammoDisplay);
+            const stateClass = ammoRes.val === 0 ? 'empty' : 'normal';
+            const block = _createResourceBlock('ammo', ammoRes.name, ammoGrid, stateClass);
+            blocksRow.appendChild(block);
         }
     }
-    
+
+    panel.appendChild(blocksRow);
+}
+
+// GM 锤子面板：填充当前职业可用的锤子和追加解锁升级
+function updateGmHammerPanel() {
+    const container = document.getElementById('gm-hammer-options');
+    if (!container || !GameState.player) return;
+    container.innerHTML = '';
+
+    const classId = GameState.player.classId;
+    // 收集气宗锤子升级
+    const qiUpgrades = (typeof UpgradeConfig !== 'undefined' ? UpgradeConfig : []).filter(u =>
+        u.classes && u.classes.includes(classId) &&
+        (u.effect.kind === 'apply_hammer' || u.effect.kind === 'unlock_followup')
+    );
+    qiUpgrades.forEach(upg => {
+        const btn = document.createElement('button');
+        btn.style.cssText = 'background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border-color);padding:2px 6px;cursor:pointer;font-size:11px;text-align:left;width:100%;border-radius:3px;';
+        const isApplied = upg.effect.kind === 'apply_hammer'
+            ? (GameState.hammers && GameState.hammers[_getHammerTargetSkill(upg.effect.hammerId)])
+            : (GameState.player._unlockedFollowUps && GameState.player._unlockedFollowUps.has(upg.effect.followUpId));
+        btn.textContent = (isApplied ? '✓ ' : '') + upg.name;
+        btn.style.opacity = isApplied ? '0.5' : '1';
+        if (!isApplied) {
+            btn.onclick = () => {
+                if (typeof applyUpgrade === 'function') {
+                    applyUpgrade({ ...upg, displayName: upg.name, rarity: 'GM', effect: { ...upg.effect, totalValue: upg.effect.baseValue } });
+                }
+                updateGmHammerPanel();
+                if (typeof updateSkillsUI === 'function') updateSkillsUI();
+            };
+        }
+        container.appendChild(btn);
+    });
+}
+
+function _getHammerTargetSkill(hammerId) {
+    if (!hammerId || typeof HammerConfig === 'undefined') return '';
+    for (const classHammers of Object.values(HammerConfig)) {
+        for (const [skillId, hammers] of Object.entries(classHammers)) {
+            if (hammers.find(h => h.id === hammerId)) return skillId;
+        }
+    }
+    return '';
 }
 
 // 收集当前职业的所有追加技能（去重）
@@ -725,11 +899,12 @@ function getClassFollowUpSkills(classId) {
 
 // 资源 key → 颜色（用于 cost cell 上色）
 const _resourceColorMap = {
-    'qi': '#ff4d4d',
-    'combo': '#ffcc00',
-    'mana': '#3399ff',
-    'ammo': '#3399ff',
-    'balance': '#9933ff'
+    'qi':      '#ff4d4d',   // 气 → 红
+    'combo':   '#ffcc00',   // 连击 → 黄
+    'mana':    '#3399ff',   // 魔力 → 蓝
+    'ammo':    '#ffc107',   // 弹药 → 金黄（子弹色，与魔力区分）
+    'balance': '#9933ff',   // 平衡 → 紫
+    'gale':    '#00e5ff'    // 疾风 → 青
 };
 
 // 渲染消耗格子到容器，返回是否有消耗
@@ -753,7 +928,7 @@ function _renderCostCells(costObj, fallbackColor, container) {
             hasCost = true;
             for (let i = 0; i < Math.min(val, 10); i++) {
                 const c = document.createElement('div');
-                c.className = 'skill-cost-cell';
+                c.className = `skill-cost-cell${key === 'ammo' ? ' ammo' : ''}`;
                 c.style.background = color;
                 c.style.borderColor = color;
                 c.style.boxShadow = `0 0 4px ${color}55`;
@@ -764,242 +939,249 @@ function _renderCostCells(costObj, fallbackColor, container) {
     return hasCost;
 }
 
-// 技能 UI 渲染
+// ─── 技能卡片构建工具 ───
+function _buildSkillCard(skill, opts = {}) {
+    const { canClick = false, onClick, colorClass = 'qi', index = -1, extraClass = '' } = opts;
+    const skillIconImages = {
+        attack: 'assets/art/icons/skill_types/type_attack_v2.png',
+        special: 'assets/art/icons/skill_types/type_special_v2.png',
+        Ultimate: 'assets/art/icons/skill_types/type_ultimate_v2.png',
+        defense: 'assets/art/icons/skill_types/type_reload_v2.png',
+        passive: 'assets/art/icons/skill_types/type_passive_v2.png',
+        'spirit-auto': 'assets/art/icons/skill_types/type_followup_v2.png',
+        'spirit-active': 'assets/art/icons/skill_types/type_special_v2.png'
+    };
+    const skillTypeNames = { attack: '攻击', special: '特技', Ultimate: '能量技', defense: '防御', passive: '被动', 'spirit-auto': '自动', 'spirit-active': '魂灵技' };
+
+    const card = document.createElement('div');
+    card.className = `skill-card${extraClass ? ' ' + extraClass : ''}`;
+    if (!canClick) {
+        card.classList.add('disabled');
+        card.style.cursor = 'default';
+        // 不在这里设 pointer-events:none，保留 hover 使 tooltip 可见
+    }
+    if (onClick && canClick) {
+        card.onclick = () => { if (typeof AudioManager !== 'undefined') AudioManager.playUi('confirm'); onClick(); };
+        if (typeof AudioManager !== 'undefined') AudioManager.bindUiSound(card, { hover: 'hover' });
+    }
+
+    const iconSrc = skill.icon && skill.icon.includes('/') ? skill.icon : (skillIconImages[skill.type] || skillIconImages.attack);
+    const iconEl = document.createElement('div');
+    iconEl.className = 'skill-icon';
+    iconEl.innerHTML = `<img src="${iconSrc}" alt="" draggable="false">`;
+    card.appendChild(iconEl);
+
+    const nameEl = document.createElement('div');
+    nameEl.className = 'skill-name-display';
+    nameEl.textContent = skill.name;
+    card.appendChild(nameEl);
+
+    const costGrid = document.createElement('div');
+    costGrid.className = 'skill-cost-grid';
+    let hasCost = false;
+    if (skill.balanceShift) {
+        hasCost = true;
+        const shiftValue = Math.abs(skill.balanceShift);
+        for (let i = 0; i < shiftValue; i++) {
+            const cell = document.createElement('div');
+            cell.className = 'skill-cost-cell balance';
+            cell.style.background = skill.balanceShift > 0 ? '#ffffff' : '#9933ff';
+            costGrid.appendChild(cell);
+        }
+    }
+    if (skill.cost) hasCost = _renderCostCells(skill.cost, _resourceColorMap[colorClass] || '#00d4ff', costGrid) || hasCost;
+    if (skill.cost && skill.costUnit) {
+        const cl = document.createElement('div');
+        cl.className = 'skill-cost-label';
+        cl.textContent = `${skill.cost}${skill.costUnit}`;
+        costGrid.appendChild(cl);
+        hasCost = true;
+    }
+    if (!hasCost) {
+        const nc = document.createElement('div');
+        nc.className = 'skill-cost-label';
+        nc.textContent = '无';
+        costGrid.appendChild(nc);
+    }
+    card.appendChild(costGrid);
+
+    const typeLabel = skillTypeNames[skill.type] || skill.type || '技能';
+    const tooltip = document.createElement('div');
+    tooltip.className = 'skill-tooltip';
+
+    // 技能名
+    const tName = document.createElement('div');
+    tName.className = 'tooltip-name';
+    tName.textContent = skill.name;
+    tooltip.appendChild(tName);
+
+    // 技能类型
+    const tType = document.createElement('div');
+    tType.className = 'tooltip-type';
+    tType.textContent = typeLabel;
+    tooltip.appendChild(tType);
+
+    // 消耗（格子可视化）
+    if (skill.cost && typeof skill.cost === 'object' && Object.keys(skill.cost).length > 0) {
+        const tCostRow = document.createElement('div');
+        tCostRow.className = 'tooltip-cost-row';
+        const label = document.createElement('span');
+        label.className = 'tooltip-cost-label';
+        label.textContent = '消耗 ';
+        tCostRow.appendChild(label);
+        _renderCostCells(skill.cost, _resourceColorMap[colorClass] || '#00d4ff', tCostRow);
+        tooltip.appendChild(tCostRow);
+    } else if (skill.cost !== null && skill.cost !== undefined && skill.costUnit) {
+        const tCostRow = document.createElement('div');
+        tCostRow.className = 'tooltip-cost-row';
+        tCostRow.innerHTML = `<span class="tooltip-cost-label">消耗 </span><span style="color:#ffcc44">${skill.cost}${skill.costUnit}</span>`;
+        tooltip.appendChild(tCostRow);
+    } else if (!skill.cost || (typeof skill.cost === 'object' && Object.keys(skill.cost).every(k => !(skill.cost[k])))) {
+        const tCostRow = document.createElement('div');
+        tCostRow.className = 'tooltip-cost-row';
+        tCostRow.innerHTML = `<span class="tooltip-cost-label">消耗 </span><span style="color:rgba(255,255,255,0.3)">无</span>`;
+        tooltip.appendChild(tCostRow);
+    }
+
+    // 技能效果
+    if (skill.desc) {
+        const tDesc = document.createElement('div');
+        tDesc.className = 'tooltip-desc';
+        tDesc.textContent = skill.desc;
+        tooltip.appendChild(tDesc);
+    }
+
+    card.appendChild(tooltip);
+
+    if (index >= 0) {
+        const hint = document.createElement('div');
+        hint.className = 'skill-key-hint';
+        hint.textContent = index + 1;
+        card.appendChild(hint);
+    }
+    return card;
+}
+
+// 技能 UI 渲染（4区块布局）
 function updateSkillsUI() {
     const panel = document.getElementById('skills-panel');
     if (!panel) return;
-
-    // 追加选择中时保留现有 DOM 不重建
     if (panel.dataset.followUpLock === '1') return;
 
     panel.innerHTML = '';
     if (!GameState.player) return;
 
     const isFollowUpPending = !!GameState.followUpPending;
-    const pendingIds = isFollowUpPending
-        ? GameState.followUpPending.followUps.map(f => f.id)
-        : [];
-    const canAct = GameState.isPlayerTurn && !GameState.isProcessingSkill && !isFollowUpPending;
+    const pendingIds = isFollowUpPending ? GameState.followUpPending.followUps.map(f => f.id) : [];
+    const isSpiritTurn = !!GameState.spiritTurnPending;
+    const canAct = GameState.isPlayerTurn && !GameState.isProcessingSkill && !isFollowUpPending && !isSpiritTurn;
 
-    // ─── 被动区 ───
-    if (GameState.player.passive) {
-        const passiveCard = document.createElement('div');
-        passiveCard.className = 'skill-card skill-card-passive';
-
-        const passiveIcon = document.createElement('div');
-        passiveIcon.className = 'skill-icon passive-icon';
-        passiveIcon.textContent = '🛡';
-        passiveCard.appendChild(passiveIcon);
-
-        const passiveName = document.createElement('div');
-        passiveName.className = 'skill-name-display';
-        passiveName.textContent = '被动';
-        passiveCard.appendChild(passiveName);
-
-        const noCost = document.createElement('div');
-        noCost.className = 'skill-cost-label';
-        noCost.textContent = '被动';
-        passiveCard.appendChild(noCost);
-
-        const passiveTooltip = document.createElement('div');
-        passiveTooltip.className = 'skill-tooltip';
-        passiveTooltip.innerHTML = `<div class="tooltip-name">被动技能</div><div class="tooltip-desc">${GameState.player.passive.desc}</div>`;
-        passiveCard.appendChild(passiveTooltip);
-
-        panel.appendChild(passiveCard);
-
-        // 被动与主动之间的分隔线
-        const div0 = document.createElement('div');
-        div0.className = 'skill-section-divider';
-        panel.appendChild(div0);
-    }
-
-    // ─── 主动技能区 ───
-    const skillIcons = { attack: '⚔', special: '✨', Ultimate: '💥' };
-    const skillTypeNames = { attack: '攻击', special: '特技', Ultimate: '能量技' };
     const classId = GameState.player.classId;
     const colorClass = classId || 'qi';
+    const spirit = GameState.spirit;
+
+    // ══════════════════════════════════════════════════
+    // 区块1：主动技能区
+    // ══════════════════════════════════════════════════
+    const activeBlock = document.createElement('div');
+    activeBlock.className = 'skill-block active-block';
+
+    const activeLabel = document.createElement('div');
+    activeLabel.className = 'skill-block-label';
+    activeLabel.textContent = '主动';
+    activeBlock.appendChild(activeLabel);
+
+    const activeGrid = document.createElement('div');
+    activeGrid.className = 'active-skill-grid';
 
     GameState.player.skills.forEach((skill, skillIndex) => {
-        const card = document.createElement('div');
-        card.className = 'skill-card';
+        const canUse = GameState.player.canUseSkill(skill);
+        const card = _buildSkillCard(skill, {
+            canClick: canAct && canUse,
+            onClick: () => usePlayerSkill(skill.id),
+            colorClass,
+            index: skillIndex
+        });
+        if (!canUse) card.classList.add('disabled');
+        if (!canAct) { card.classList.add('disabled'); card.style.opacity = '0.6'; card.style.pointerEvents = 'none'; }
+        activeGrid.appendChild(card);
+    });
+    activeBlock.appendChild(activeGrid);
 
-        if (!GameState.player.canUseSkill(skill)) {
-            card.classList.add('disabled');
-            if (skill.currentCooldown > 0) {
-                const cdOverlay = document.createElement('div');
-                cdOverlay.className = 'skill-cd-overlay';
-                cdOverlay.textContent = skill.currentCooldown;
-                card.appendChild(cdOverlay);
+    // 追加选择时在主动区下方显示提示
+    if (isFollowUpPending) {
+        const hint = document.createElement('div');
+        hint.className = 'followup-hint-bar';
+        hint.textContent = '▼ 选择追加技能';
+        activeBlock.appendChild(hint);
+    }
+
+    // ══════════════════════════════════════════════════
+    // 区块3：追加技能区（中下）— 已解锁的追加技能
+    // ══════════════════════════════════════════════════
+    const followupBlock = document.createElement('div');
+    followupBlock.className = 'skill-block followup-block';
+
+    const followupLabel = document.createElement('div');
+    followupLabel.className = 'skill-block-label';
+    followupLabel.textContent = '追加';
+    followupBlock.appendChild(followupLabel);
+
+    const followupRow = document.createElement('div');
+    followupRow.className = 'followup-row';
+
+    // 收集已解锁的追加技能
+    const allFollowUpDefs = typeof FollowUpSkillDefs !== 'undefined' ? FollowUpSkillDefs : {};
+    const triggers = (typeof FollowUpTriggers !== 'undefined' && FollowUpTriggers[classId]) ? FollowUpTriggers[classId] : {};
+    const seenFu = new Set();
+    const unlockedFus = [];
+    Object.values(triggers).forEach(cfg => {
+        (cfg.skills || []).forEach(id => {
+            if (!seenFu.has(id) && allFollowUpDefs[id]) {
+                seenFu.add(id);
+                const fu = allFollowUpDefs[id];
+                // 仅显示已解锁的追加技能
+                const isUnlocked = typeof fu.isUnlocked === 'function' ? fu.isUnlocked(GameState.player) : true;
+                if (isUnlocked) unlockedFus.push(fu);
             }
-        }
-
-        if (!canAct) {
-            card.classList.add('disabled');
-            card.style.opacity = '0.5';
-            card.style.pointerEvents = 'none';
-        }
-
-        card.onclick = () => {
-            if (canAct && GameState.player.canUseSkill(skill)) {
-                if (typeof AudioManager !== 'undefined') AudioManager.playUi('confirm');
-                usePlayerSkill(skill.id);
-            }
-        };
-        if (typeof AudioManager !== 'undefined') AudioManager.bindUiSound(card, { hover: 'hover' });
-
-        const icon = document.createElement('div');
-        icon.className = 'skill-icon';
-        if (skill.name && skill.name.includes('强化')) icon.classList.add('enhanced');
-        icon.textContent = skillIcons[skill.type] || '⚔';
-        card.appendChild(icon);
-
-        const nameDisplay = document.createElement('div');
-        nameDisplay.className = 'skill-name-display';
-        nameDisplay.textContent = skill.name;
-        card.appendChild(nameDisplay);
-
-        // 消耗格子
-        const costGrid = document.createElement('div');
-        costGrid.className = 'skill-cost-grid';
-
-        let hasCost = false;
-        if (skill.balanceShift) {
-            hasCost = true;
-            const shiftValue = Math.abs(skill.balanceShift);
-            for (let i = 0; i < shiftValue; i++) {
-                const cell = document.createElement('div');
-                cell.className = 'skill-cost-cell balance';
-                cell.style.background = skill.balanceShift > 0 ? '#ffffff' : '#9933ff';
-                cell.style.borderColor = skill.balanceShift > 0 ? '#ffffff' : '#9933ff';
-                costGrid.appendChild(cell);
-            }
-        }
-        const rendered = _renderCostCells(skill.cost, _resourceColorMap[colorClass] || '#00d4ff', costGrid);
-        hasCost = hasCost || rendered;
-
-        if (!hasCost) {
-            const noCost = document.createElement('div');
-            noCost.className = 'skill-cost-label';
-            noCost.textContent = '无';
-            costGrid.appendChild(noCost);
-        }
-        card.appendChild(costGrid);
-
-        // Tooltip
-        const tooltip = document.createElement('div');
-        tooltip.className = 'skill-tooltip';
-        const tooltipName = document.createElement('div');
-        tooltipName.className = 'tooltip-name';
-        tooltipName.textContent = skill.name;
-        tooltip.appendChild(tooltipName);
-        const tooltipType = document.createElement('div');
-        tooltipType.className = 'tooltip-type';
-        tooltipType.textContent = skillTypeNames[skill.type] || skill.type || '技能';
-        tooltip.appendChild(tooltipType);
-        const tooltipDesc = document.createElement('div');
-        tooltipDesc.className = 'tooltip-desc';
-        if (skill.desc) {
-            tooltipDesc.textContent = skill.desc;
-        } else {
-            let pct = 0;
-            if (skill.baseMultiplier) pct = skill.baseMultiplier * 100;
-            else if (skill.damage && GameState.player && skill.id !== 'finisher') pct = skill.damage / GameState.player.baseAtk * 100;
-            if (pct > 0 && skill.id !== 'finisher') {
-                tooltipDesc.textContent = (skill.hits && skill.hits > 1)
-                    ? `${skill.hits} x ${pct.toFixed(0)}% 攻击力伤害`
-                    : `造成 ${pct.toFixed(0)}% 攻击力伤害`;
-            } else if (skill.effect) {
-                tooltipDesc.textContent = `效果: ${skill.effect}`;
-            }
-        }
-        tooltip.appendChild(tooltipDesc);
-        card.appendChild(tooltip);
-
-        const keyHint = document.createElement('div');
-        keyHint.className = 'skill-key-hint';
-        keyHint.textContent = skillIndex + 1;
-        card.appendChild(keyHint);
-
-        panel.appendChild(card);
+        });
     });
 
-    // ─── 追加技能区 ───
-    const followUps = getClassFollowUpSkills(classId);
-    if (followUps.length === 0) return;
+    if (unlockedFus.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'skill-block-empty';
+        empty.textContent = '暂无';
+        followupRow.appendChild(empty);
+    } else {
+        unlockedFus.forEach(fu => {
+            const isLit = isFollowUpPending && pendingIds.includes(fu.id);
+            const canAfford = fu.canUse(GameState.player);
+            const card = _buildSkillCard(
+                { name: fu.name, type: 'followup', icon: fu.icon, desc: fu.desc, cost: fu.cost },
+                {
+                    canClick: isLit && canAfford,
+                    onClick: () => {
+                        if (!GameState.followUpPending) return;
+                        const cb = GameState.followUpPending.callback;
+                        GameState.followUpPending = null;
+                        panel.dataset.followUpLock = '0';
+                        cb(fu);
+                    },
+                    colorClass,
+                    extraClass: 'followup-skill' + (isLit && canAfford ? ' followup-active' : '')
+                }
+            );
+            followupRow.appendChild(card);
+        });
+    }
 
-    const divider = document.createElement('div');
-    divider.className = 'skill-section-divider';
-    panel.appendChild(divider);
-
-    followUps.forEach(fu => {
-        const isLit = pendingIds.includes(fu.id);
-        const canAfford = fu.canUse(GameState.player);
-
-        const card = document.createElement('div');
-        card.className = 'skill-card followup-skill';
-
-        if (isLit && canAfford) {
-            card.classList.add('followup-active');
-        } else {
-            card.classList.add('disabled');
-        }
-
-        // 图标
-        const icon = document.createElement('div');
-        icon.className = 'skill-icon followup-icon-style';
-        icon.textContent = fu.icon || '⚡';
-        card.appendChild(icon);
-
-        // 名称
-        const nameEl = document.createElement('div');
-        nameEl.className = 'skill-name-display';
-        nameEl.textContent = fu.name;
-        card.appendChild(nameEl);
-
-        // 消耗格子
-        const costGrid = document.createElement('div');
-        costGrid.className = 'skill-cost-grid';
-        if (fu.cost) {
-            const rendered = _renderCostCells(fu.cost, _resourceColorMap[colorClass] || '#00d4ff', costGrid);
-            if (!rendered) {
-                const l = document.createElement('div');
-                l.className = 'skill-cost-label';
-                l.textContent = '无';
-                costGrid.appendChild(l);
-            }
-        }
-        card.appendChild(costGrid);
-
-        // Tooltip
-        const tooltip = document.createElement('div');
-        tooltip.className = 'skill-tooltip';
-        tooltip.innerHTML = `<div class="tooltip-name">${fu.name}</div><div class="tooltip-type">追加技能</div><div class="tooltip-desc">${fu.desc || ''}</div>`;
-        card.appendChild(tooltip);
-
-        // 点击
-        if (isLit && canAfford) {
-            card.addEventListener('click', () => {
-                if (!GameState.followUpPending) return;
-                const cb = GameState.followUpPending.callback;
-                GameState.followUpPending = null;
-                panel.dataset.followUpLock = '0';
-                if (typeof AudioManager !== 'undefined') AudioManager.playUi('confirm');
-                cb(fu);
-            });
-            if (typeof AudioManager !== 'undefined') AudioManager.bindUiSound(card, { hover: 'hover' });
-        }
-
-        panel.appendChild(card);
-    });
-
-    // 追加触发时：跳过按钮
+    // 追加触发时的跳过按钮
     if (isFollowUpPending) {
         panel.dataset.followUpLock = '1';
         const skipBtn = document.createElement('button');
         skipBtn.className = 'followup-skip-btn';
         skipBtn.textContent = '✕';
-        skipBtn.title = '跳过追加技能';
+        skipBtn.title = '跳过追加';
         if (typeof AudioManager !== 'undefined') AudioManager.bindUiSound(skipBtn, { hover: 'hover', click: 'skip' });
         skipBtn.addEventListener('click', () => {
             if (!GameState.followUpPending) return;
@@ -1008,8 +1190,178 @@ function updateSkillsUI() {
             panel.dataset.followUpLock = '0';
             cb(null);
         });
-        panel.appendChild(skipBtn);
+        followupRow.appendChild(skipBtn);
     }
+
+    followupBlock.appendChild(followupRow);
+
+    // ══════════════════════════════════════════════════
+    // 魂灵区（右列，跨2行）：上=主动技能，下=被动效果
+    // ══════════════════════════════════════════════════
+    const spiritBlock = document.createElement('div');
+    spiritBlock.className = 'skill-block spirit-block';
+    if (isSpiritTurn) spiritBlock.classList.add('spirit-turn-active');
+
+    // ── 魂灵主动子块（紫色框）──
+    const spiritActiveSub = document.createElement('div');
+    spiritActiveSub.className = 'spirit-active-sub';
+
+    const spiritActiveLabel = document.createElement('div');
+    spiritActiveLabel.className = 'skill-block-label';
+    spiritActiveLabel.textContent = spirit ? spirit.name : '魂灵';
+    spiritActiveSub.appendChild(spiritActiveLabel);
+
+    const spiritSkills = (spirit && spirit.spiritSkills) ? spirit.spiritSkills : [];
+    if (spiritSkills.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'skill-block-empty';
+        empty.textContent = spirit ? '无主动技能' : '未契约';
+        spiritActiveSub.appendChild(empty);
+    } else {
+        const spiritSkillRow = document.createElement('div');
+        spiritSkillRow.className = 'spirit-skill-row';
+        spiritSkills.forEach(sk => {
+            const galeStacks = (spirit.state && spirit.state.galeStacks) || 0;
+            const canUseSpiritSkill = isSpiritTurn && !sk.autoTrigger &&
+                (sk.id === 'cs_slash_wind' ? galeStacks >= 2 : galeStacks >= 5);
+
+            const card = _buildSkillCard(
+                {
+                    name: sk.name,
+                    type: sk.autoTrigger ? 'spirit-auto' : 'spirit-active',
+                    icon: sk.icon,
+                    desc: sk.desc,
+                    cost: null
+                },
+                {
+                    canClick: canUseSpiritSkill,
+                    onClick: () => _executeSpiritSkill(sk.id, spirit),
+                    colorClass,
+                    extraClass: sk.autoTrigger ? 'spirit-auto-skill' : (isSpiritTurn && canUseSpiritSkill ? 'spirit-skill-lit' : '')
+                }
+            );
+            // 疾风消耗显示（连击魂）
+            if (sk.cost !== undefined && sk.costUnit) {
+                const costInfo = card.querySelector('.skill-cost-grid');
+                if (costInfo) {
+                    costInfo.innerHTML = '';
+                    const cl = document.createElement('div');
+                    cl.className = 'skill-cost-label';
+                    cl.style.color = '#ffcc44';
+                    cl.textContent = `${sk.cost}${sk.costUnit}`;
+                    costInfo.appendChild(cl);
+                }
+            }
+            spiritSkillRow.appendChild(card);
+        });
+        spiritActiveSub.appendChild(spiritSkillRow);
+        // 连击魂：跳过按钮
+        if (isSpiritTurn) {
+            const skipBtn = document.createElement('button');
+            skipBtn.className = 'followup-skip-btn spirit-skip-btn';
+            skipBtn.textContent = '跳过';
+            skipBtn.title = '不行动（保留疾风）';
+            skipBtn.addEventListener('click', () => {
+                if (GameState.spiritTurnPending && GameState.spiritTurnPending.callback) {
+                    GameState.spiritTurnPending.callback();
+                }
+            });
+            spiritActiveSub.appendChild(skipBtn);
+        }
+    }
+
+    // ── 魂灵被动子块（蓝绿色框）──
+    const spiritPassiveSub = document.createElement('div');
+    spiritPassiveSub.className = 'spirit-passive-sub';
+
+    const spiritPassiveLabel = document.createElement('div');
+    spiritPassiveLabel.className = 'skill-block-label';
+    spiritPassiveLabel.textContent = '被动';
+    spiritPassiveSub.appendChild(spiritPassiveLabel);
+
+    const passivesFromSpirit = (spirit && spirit.passives) ? spirit.passives : [];
+    if (passivesFromSpirit.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'skill-block-empty';
+        empty.textContent = spirit ? '无被动' : '—';
+        spiritPassiveSub.appendChild(empty);
+    } else {
+        const passiveRow = document.createElement('div');
+        passiveRow.style.cssText = 'display:flex;flex-direction:row;gap:5px;flex-wrap:wrap;align-items:stretch;';
+        passivesFromSpirit.forEach(p => {
+            const card = _buildSkillCard(
+                { name: p.name, type: 'passive', icon: p.icon, desc: p.desc, cost: null },
+                { canClick: false, colorClass }
+            );
+            card.classList.add('skill-card-passive');
+            passiveRow.appendChild(card);
+        });
+        spiritPassiveSub.appendChild(passiveRow);
+    }
+
+    spiritBlock.appendChild(spiritActiveSub);
+    spiritBlock.appendChild(spiritPassiveSub);
+
+    // 组合3区块到面板（被动已合并进 spiritBlock，不再单独 append passiveBlock）
+    panel.appendChild(activeBlock);
+    panel.appendChild(followupBlock);
+    panel.appendChild(spiritBlock);
+}
+
+// 执行连击魂的主动技能
+function _executeSpiritSkill(skillId, spirit) {
+    if (!spirit || !GameState.player || !GameState.enemy) return;
+    const player = GameState.player;
+    const galeStacks = spirit.state.galeStacks || 0;
+
+    if (skillId === 'cs_slash_wind') {
+        if (galeStacks < 2) return;
+        spirit.state.galeStacks -= 2;
+        // 更新玩家速度
+        player.speed = player.baseSpeed + spirit.state.galeStacks * 10;
+        const segments = spirit.state.slashUpgrade1 ? 3 : 2;
+        const atk = getEffectivePlayerAtk(player);
+        // 裂刃分支附加伤害
+        const bladeBonus = spirit.state.branchBlade ? Math.floor(spirit.state.galeStacks / 3) * 0.6 : 0;
+        Logger.log(`斩风！${segments}段×90%`, true);
+        for (let i = 0; i < segments; i++) {
+            setTimeout(() => applySpiritDamage(atk * (0.9 + bladeBonus), '斩风'), 80 + i * 150);
+        }
+        // 强化2：返还1层疾风
+        if (spirit.state.slashUpgrade2) {
+            spirit.state.galeStacks = Math.min(10, spirit.state.galeStacks + 1);
+        }
+
+    } else if (skillId === 'cs_dash_step') {
+        if (galeStacks < 5) return;
+        spirit.state.galeStacks -= 5;
+        player.speed = player.baseSpeed + spirit.state.galeStacks * 10;
+        const atk = getEffectivePlayerAtk(player);
+        Logger.log('飞驰步！玩家立即再行动', true);
+        setTimeout(() => {
+            applySpiritDamage(atk * 1.0, '飞驰步');
+            // 推进玩家行动条（立即再行动）
+            if (typeof advanceUnitAV === 'function') advanceUnitAV(player, 1.0);
+            // 强化2：攻击力+20%（1次行动）
+            if (spirit.state.dashUpgrade2 && player) {
+                player.addBuff({ name: '飞驰-攻击', type: 'buff', stat: 'atk', value: 0.2, duration: 1, desc: '攻击+20%（1次行动）' });
+            }
+            if (typeof updateUI === 'function') updateUI();
+        }, 80);
+    }
+
+    if (typeof updateUI === 'function') updateUI();
+    if (typeof updateBuffBars === 'function') setTimeout(updateBuffBars, 300);
+
+    // 通知 spiritTurn 的 callback（继续 CTB 循环）
+    setTimeout(() => {
+        if (GameState.spiritTurnPending && GameState.spiritTurnPending.callback) {
+            const cb = GameState.spiritTurnPending.callback;
+            GameState.spiritTurnPending = null;
+            cb();
+        }
+        if (typeof updateSkillsUI === 'function') updateSkillsUI();
+    }, 500);
 }
 
 // 升级选择 UI
@@ -1110,7 +1462,7 @@ function openUpgradeOverlay(options, onSelectCallback) {
         if (option.tier && option.tier !== 'base') {
             const tierTag = document.createElement('div');
             tierTag.className = `upgrade-tier-tag tier-${option.tier}`;
-            const tierNames = { synergy: '协同', keystone: '关键石', hammer: '锤子' };
+            const tierNames = { synergy: '协同', keystone: '关键石', hammer: '魂印' };
             tierTag.textContent = tierNames[option.tier] || option.tier;
             card.appendChild(tierTag);
         }

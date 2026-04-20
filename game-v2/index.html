@@ -27,7 +27,7 @@
             <div class="character-grid" id="character-grid">
                 <div class="character-card" data-class="qi">
                     <div class="card-accent"></div>
-                    <div class="card-icon">🔥</div>
+                    <div class="card-icon"><img src="assets/art/badges/badge_qi_v2.png" alt="气宗" draggable="false"></div>
                     <div class="card-name">气宗</div>
                     <div class="card-archetype">蓄力爆发型</div>
                     <div class="card-divider"></div>
@@ -39,7 +39,7 @@
                 </div>
                 <div class="character-card" data-class="combo">
                     <div class="card-accent"></div>
-                    <div class="card-icon">⚔️</div>
+                    <div class="card-icon"><img src="assets/art/badges/badge_combo_v2.png" alt="剑圣" draggable="false"></div>
                     <div class="card-name">剑圣</div>
                     <div class="card-archetype">行动积攒型</div>
                     <div class="card-divider"></div>
@@ -51,7 +51,7 @@
                 </div>
                 <div class="character-card" data-class="mana">
                     <div class="card-accent"></div>
-                    <div class="card-icon">💎</div>
+                    <div class="card-icon"><img src="assets/art/badges/badge_mana_v2.png" alt="魔导" draggable="false"></div>
                     <div class="card-name">魔导</div>
                     <div class="card-archetype">弹药闭环型</div>
                     <div class="card-divider"></div>
@@ -63,7 +63,7 @@
                 </div>
                 <div class="character-card" data-class="balance">
                     <div class="card-accent"></div>
-                    <div class="card-icon">☯️</div>
+                    <div class="card-icon"><img src="assets/art/badges/badge_balance_v2.png" alt="判官" draggable="false"></div>
                     <div class="card-name">判官</div>
                     <div class="card-archetype">翻转归中型</div>
                     <div class="card-divider"></div>
@@ -93,7 +93,7 @@
         <!-- Top Bar -->
         <div class="top-bar">
             <div class="build-info">
-                <div>关卡: <span id="level-count">1/4</span></div>
+                <div>关卡: <span id="level-count">1/4</span> <button id="map-button" style="background:var(--bg-tertiary);color:var(--accent-primary);border:1px solid rgba(0,212,255,0.3);padding:1px 8px;cursor:pointer;font-size:11px;border-radius:3px;margin-left:6px;" onclick="if(typeof viewMap==='function'&&GameState.isRunning)viewMap();">地图</button></div>
                 <div>角色: <span id="player-class">未选择</span>
                     <select id="class-selector" style="margin-left: 10px; background: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color); padding: 2px 5px;">
                         <option value="qi">气宗</option>
@@ -104,12 +104,14 @@
                 </div>
                 <div id="spirit-name-container" style="display:none">魂灵: <span id="spirit-name">未选择</span></div>
             </div>
-            <div class="timeline-container" id="timeline">
-                <!-- 动态生成时间轴 -->
-            </div>
-            <div>
+            <div style="display:flex;gap:8px;align-items:center;">
                 回合: <span id="turn-count">0</span>
-                <button id="restart-button" style="margin-left: 10px; background: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color); padding: 2px 10px; cursor: pointer;">结束战斗</button>
+                <button id="restart-button" style="background: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color); padding: 2px 10px; cursor: pointer;">结束战斗</button>
+                <!-- GM 锤子面板 -->
+                <details id="gm-hammer-panel" style="position:relative;">
+                    <summary style="background:var(--bg-tertiary);color:#ffd54f;border:1px solid #ffd54f44;padding:2px 8px;cursor:pointer;font-size:12px;border-radius:3px;">GM·魂铸</summary>
+                    <div id="gm-hammer-options" style="position:absolute;right:0;top:24px;background:var(--bg-secondary);border:1px solid var(--border-color);padding:8px;z-index:100;width:220px;max-height:320px;overflow-y:auto;display:flex;flex-direction:column;gap:4px;"></div>
+                </details>
             </div>
         </div>
 
@@ -127,7 +129,8 @@
                     <div class="spirit-frame-status" id="spirit-frame-status"></div>
                 </div>
                 <div class="character-box" id="player-box">
-                    <div>玩家</div>
+                    <img class="player-portrait" id="player-portrait" alt="" draggable="false" />
+                    <div class="player-label" id="player-label">玩家</div>
                     <div class="spirit-orbit" id="spirit-orbit">
                         <div class="spirit-orb" id="spirit-orb"></div>
                     </div>
@@ -171,6 +174,11 @@
             </div>
 
             <div class="vfx-layer" id="vfx-layer"></div>
+            <div class="timeline-container" id="timeline"></div>
+            <div class="damage-stats-panel" id="damage-stats-panel" aria-label="本场伤害统计">
+                <div class="damage-stats-title">本战伤害</div>
+                <div class="damage-stats-list" id="damage-stats-list"></div>
+            </div>
         </div>
 
         <!-- Bottom Panel -->
@@ -181,8 +189,11 @@
             <div class="skills-panel" id="skills-panel">
                 <!-- 动态生成技能卡片 -->
             </div>
-            <div class="log-panel" id="log-panel">
-                <div class="log-entry">战斗开始...</div>
+            <div class="log-wrapper" id="log-wrapper">
+                <div class="log-toggle" id="log-toggle">战斗日志 <span class="log-toggle-arrow">▸</span></div>
+                <div class="log-panel" id="log-panel">
+                    <div class="log-entry">战斗开始...</div>
+                </div>
             </div>
         </div>
     </div>
@@ -205,6 +216,20 @@
         </div>
     </div>
 
+    <!-- 地图选择面板 -->
+    <div class="map-overlay hidden" id="map-overlay">
+        <div class="map-panel">
+            <div class="map-header">
+                <span class="map-act-title" id="map-act-title">第1幕</span>
+                <span class="map-progress" id="map-progress">1/7</span>
+            </div>
+            <div class="map-canvas" id="map-canvas"></div>
+            <div class="map-footer">
+                <span class="map-hint" id="map-hint">选择下一个节点</span>
+            </div>
+        </div>
+    </div>
+
     <!-- 脚本引入顺序至关重要 -->
     <script src="js/state.js"></script>
     <script src="js/utils.js"></script>
@@ -216,6 +241,7 @@
     <script src="js/upgrade_config.js"></script>
     <script src="js/upgrades.js"></script>
     <script src="js/run.js"></script>
+    <script src="js/map.js"></script>
     <script src="js/rest.js"></script>
     <script src="js/ui.js"></script>
     <script src="js/main.js"></script>

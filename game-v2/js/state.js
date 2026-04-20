@@ -23,6 +23,8 @@ const GameState = {
     hammersPending: null,  // { options: [], callback: fn } — 锤子选择待决
     hammersChosen: 0,      // 本局已获得锤子数
     isBattleEnded: false,
+    /** 本场战斗对敌伤害统计 { entries: { [key]: { label, total } }, order: string[] } */
+    skillDamageStats: null,
     debug: {
         enabled: false,
         infiniteResources: true
@@ -62,6 +64,32 @@ const GameEvents = {
         });
     }
 };
+
+function resetSkillDamageStats() {
+    GameState.skillDamageStats = { entries: {}, order: [] };
+    if (typeof updateSkillDamageStatsPanel === 'function') {
+        updateSkillDamageStatsPanel();
+    }
+}
+
+/** 累计本场对敌方造成的伤害（按技能/追加/魂灵分桶） */
+function recordSkillDamageStat(statKey, displayLabel, amount) {
+    if (!statKey || !displayLabel) return;
+    const n = Number(amount);
+    if (!Number.isFinite(n) || n <= 0) return;
+    if (!GameState.skillDamageStats || !GameState.skillDamageStats.entries) {
+        GameState.skillDamageStats = { entries: {}, order: [] };
+    }
+    const { entries, order } = GameState.skillDamageStats;
+    if (!entries[statKey]) {
+        entries[statKey] = { label: displayLabel, total: 0 };
+        order.push(statKey);
+    }
+    entries[statKey].total += n;
+    if (typeof updateSkillDamageStatsPanel === 'function') {
+        updateSkillDamageStatsPanel();
+    }
+}
 
 function initDebugConfigFromUrl() {
     try {

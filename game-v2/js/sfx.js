@@ -242,20 +242,38 @@ class SFX {
         noise.stop(now + 0.1);
     }
 
-    // 受击音效（玩家被打）
+    // 受击音效
     static hit() {
         const ctx = SFX._ensureCtx();
         if (!ctx) return;
         const now = ctx.currentTime;
 
+        // 噪音冲击
         const noise = ctx.createBufferSource();
-        noise.buffer = SFX._noiseBuffer(0.06);
-        const gain = ctx.createGain();
-        gain.gain.setValueAtTime(0.35, now);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
-        noise.connect(gain).connect(SFX._masterGain);
+        noise.buffer = SFX._noiseBuffer(0.12);
+        const noiseGain = ctx.createGain();
+        noiseGain.gain.setValueAtTime(0.55, now);
+        noiseGain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
+        const bpf = ctx.createBiquadFilter();
+        bpf.type = 'bandpass';
+        bpf.frequency.setValueAtTime(1200, now);
+        bpf.frequency.exponentialRampToValueAtTime(400, now + 0.1);
+        bpf.Q.value = 1.5;
+        noise.connect(bpf).connect(noiseGain).connect(SFX._masterGain);
         noise.start(now);
-        noise.stop(now + 0.08);
+        noise.stop(now + 0.14);
+
+        // 低频冲击体感
+        const osc = ctx.createOscillator();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(150, now);
+        osc.frequency.exponentialRampToValueAtTime(50, now + 0.08);
+        const oscGain = ctx.createGain();
+        oscGain.gain.setValueAtTime(0.25, now);
+        oscGain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+        osc.connect(oscGain).connect(SFX._masterGain);
+        osc.start(now);
+        osc.stop(now + 0.12);
     }
 
     // UI 悬停：轻柔短促提示

@@ -200,60 +200,42 @@ class Character {
 }
 
 // A. 气宗 (Qi) - 蓄力爆发型
-// 内伤系统：可叠层（0-10），叠满后可引爆。高消耗技能叠内伤层数。
+// 资源：气息（0-10），初始满值，每回合回复2。
+// 被动效果由魂灵提供；角色本身无被动。
 class QiMaster extends Character {
     constructor(name, stats) {
         super('qi', name, stats);
         this.resources = {
             qi: { val: 10, max: 10, name: '气' }
         };
-        this.qiInternalInjuryMult = 1.3;
-        this.qiSurge = false;
-        this.qiBlade = false;
-        this.qiChainStrike = false;
-        this.qiMountainCrush = false;
-        this.qiMountainCrushStacks = 0;
-        this.qiInnerFlow = false;
-        this.qiInjuryDetonateBonus = false;
-        this.passive = {
-            desc: '消耗≥6点气的技能为目标叠加3层【内伤】。内伤可叠加（上限10层），被引爆或达到上限时造成爆发伤害。'
-        };
+        // 已解锁的追加技能集合（通过升级解锁）
+        this._unlockedFollowUps = new Set();
+        // 架势状态追踪
+        this._usedStanceThisTurn = false;
+        this._tookHitAfterStance = false;
+        this._huijiAvailable = false;
+        // 无角色被动；被动效果由魂灵提供
+        this.passive = null;
         this.initSkills();
     }
 
     initSkills() {
         this.skills = [
             createSkill({
-                id: 'light_strike',
-                name: '轻击',
+                id: 'light_punch',
+                name: '轻拳',
                 type: 'attack',
                 cost: { qi: 0 },
                 baseMultiplier: 1.0,
-                damage: this.baseAtk * 1.0,
                 tags: ['Light', 'Melee'],
-                desc: '基础拳法，不消耗气，造成100%攻击力伤害',
+                desc: '造成100%攻击力伤害',
                 onHit: (user, target) => {
-                    // 气刃升级：气≥8时轻击叠1层内伤
-                    if (user.qiBlade && user.resources.qi.val >= 8 && target) {
-                        this._addInjuryStacks(target, 1);
-                    }
-                    // 连环拳锤子：每hit叠内伤
-                    const hammer = user.skills.find(s => s.id === 'light_strike');
-                    if (hammer && hammer._activeHammer && hammer._activeHammer.morph.extra && hammer._activeHammer.morph.extra.stacksInjuryPerHit) {
-                        this._addInjuryStacks(target, hammer._activeHammer.morph.extra.stacksInjuryPerHit);
-                    }
-                    // 回气掌锤子
-                    if (hammer && hammer._activeHammer && hammer._activeHammer.morph.extra && hammer._activeHammer.morph.extra.qiRecoveryOnHit) {
-                        user.resources.qi.val = Math.min(10, user.resources.qi.val + hammer._activeHammer.morph.extra.qiRecoveryOnHit);
-                        Logger.log(`回气掌：气+${hammer._activeHammer.morph.extra.qiRecoveryOnHit}`);
-                        updateResourceUI();
-                    }
-                    // 轻击连环升级
-                    if (user.qiChainStrike) {
-                        user.addBuff({
-                            name: '连击加速', type: 'buff', stat: 'speed',
-                            value: 0.05, duration: 1, desc: '速度+5%'
-                        });
+                    // 集气掌锤子：命中回1气（qiOnHit 由 applyHammer extra spread 设置）
+                    const sk = user.skills.find(s => s.id === 'light_punch');
+                    if (sk && sk.qiOnHit) {
+                        user.resources.qi.val = Math.min(10, user.resources.qi.val + sk.qiOnHit);
+                        Logger.log(`集气掌：气+${sk.qiOnHit}`);
+                        if (typeof updateResourceUI === 'function') updateResourceUI();
                     }
                 }
             }),
@@ -263,35 +245,8 @@ class QiMaster extends Character {
                 type: 'special',
                 cost: { qi: 2 },
                 baseMultiplier: 2.0,
-                damage: this.baseAtk * 2.0,
                 tags: ['Special', 'Melee'],
-                desc: '消耗2气，造成200%攻击力伤害。目标有内伤时返还2气。',
-                onHit: (user, target) => {
-                    if (target && target.injuryStacks > 0) {
-                        user.resources.qi.val = Math.min(10, user.resources.qi.val + 2);
-                        Logger.log('命中内伤目标！返还2气', true);
-                        if (user.qiInnerFlow) {
-                            user.resources.qi.val = Math.min(10, user.resources.qi.val + 1);
-                            Logger.log('内息循环：额外+1气');
-                        }
-                        updateResourceUI();
-                    }
-                    if (user.qiRapidSpeedBoost) {
-                        user.addBuff({
-                            name: '迅击-加速', type: 'buff', stat: 'speed',
-                            value: user.qiRapidSpeedBoost, duration: 1,
-                            desc: `速度提升 ${(user.qiRapidSpeedBoost * 100).toFixed(0)}%`
-                        });
-                    }
-                    // 裂伤击锤子
-                    const rapidSkill = user.skills.find(s => s.id === 'rapid_strike');
-                    if (rapidSkill && rapidSkill._activeHammer && rapidSkill._activeHammer.morph.extra) {
-                        const ext = rapidSkill._activeHammer.morph.extra;
-                        if (ext.stacksInjury && target) {
-                            this._addInjuryStacks(target, ext.stacksInjury);
-                        }
-                    }
-                }
+                desc: '造成200%攻击力伤害'
             }),
             createSkill({
                 id: 'devastate',
@@ -299,76 +254,24 @@ class QiMaster extends Character {
                 type: 'Ultimate',
                 cost: { qi: 6 },
                 baseMultiplier: 3.5,
-                damage: this.baseAtk * 3.5,
                 tags: ['Heavy', 'Ultimate', 'Melee'],
-                desc: '消耗6气，造成350%攻击力伤害。叠加3层内伤'
+                desc: '造成350%攻击力伤害'
+            }),
+            createSkill({
+                id: 'stance',
+                name: '架势',
+                type: 'defense',
+                cost: { qi: 0 },
+                baseMultiplier: 0,
+                effect: 'stance',
+                tags: ['Defense'],
+                desc: '获得攻击力100%的护盾。本回合未受击额外回复2气'
             })
         ];
     }
 
-    _addInjuryStacks(target, count) {
-        if (!target) return;
-        if (!target.injuryStacks) target.injuryStacks = 0;
-        const before = target.injuryStacks;
-        target.injuryStacks = Math.min(10, target.injuryStacks + count);
-        const added = target.injuryStacks - before;
-        if (added > 0) {
-            Logger.log(`内伤 +${added}层（当前${target.injuryStacks}/10）`, true);
-        }
-        // 叠满自动引爆
-        if (target.injuryStacks >= 10) {
-            this._detonateInjury(target);
-        }
-        // 兼容旧系统：保持 internalInjury > 0 供其他系统判断
-        target.internalInjury = target.injuryStacks > 0 ? 2 : 0;
-        updateBuffBars();
-    }
-
-    _detonateInjury(target) {
-        if (!target || !target.injuryStacks || target.injuryStacks <= 0) return 0;
-        const stacks = target.injuryStacks;
-        const detonateDmg = this.baseAtk * 0.6 * stacks * this.qiInternalInjuryMult;
-        target.injuryStacks = 0;
-        target.internalInjury = 0;
-
-        target.takeDamage(detonateDmg);
-        Logger.log(`内伤引爆（${stacks}层）！造成 ${detonateDmg.toFixed(1)} 点爆发伤害`, true);
-
-        if (this.qiArmorBreakOnInjury) {
-            target.addBuff({
-                name: '内伤-破防', type: 'debuff', stat: 'def',
-                value: -2, duration: 2, desc: '防御降低2'
-            });
-        }
-
-        const enemyPos = typeof getUnitCenter === 'function' ? getUnitCenter('enemy-box') : null;
-        if (enemyPos && typeof ParticleSystem !== 'undefined') {
-            ParticleSystem.showDamageNumber(enemyPos.x, enemyPos.y - 30, detonateDmg, '#ff0000', '引爆!',
-                { fontSize: '28px', holdMs: 600, fadeMs: 1200, floatDistance: 40 });
-            ParticleSystem.createImpact(enemyPos.x, enemyPos.y, 'ultimate', '#ff4400');
-            ParticleSystem.shakeScreen(8, 300);
-        }
-
-        if (target.hp <= 0 && !GameState.isBattleEnded && typeof winBattle === 'function') {
-            GameState.isBattleEnded = true;
-            winBattle();
-        }
-
-        updateBuffBars();
-        return detonateDmg;
-    }
-
-    onTurnStart() {
-        const qiGain = this.qiSurge ? 3 : 2;
-        this.resources.qi.val = Math.min(this.resources.qi.max, this.resources.qi.val + qiGain);
-        Logger.log(`气宗：气+${qiGain} (当前 ${this.resources.qi.val}/${this.resources.qi.max})`);
-        updateResourceUI();
-    }
-
     canUseSkill(skill) {
-        if (typeof hasInfiniteResources === 'function' && hasInfiniteResources()) {
-            return true;
-        }
+        if (typeof hasInfiniteResources === 'function' && hasInfiniteResources()) return true;
         return this.resources.qi.val >= (skill.cost.qi || 0);
     }
 
@@ -382,13 +285,30 @@ class QiMaster extends Character {
 
         let qiCost = skill.cost.qi || 0;
 
-        // 蓄力崩山锤子：消耗所有气
-        if (skill.id === 'devastate' && skill._activeHammer && skill._activeHammer.morph.extra && skill._activeHammer.morph.extra.consumeAllQi) {
-            qiCost = Math.max(skill.cost.qi || 6, this.resources.qi.val);
-            const extraQi = qiCost - (skill.cost.qi || 6);
-            const extraMult = extraQi * (skill._activeHammer.morph.extra.extraQiMultPerPoint || 0.5);
-            skill.calculatedDamage = this.getBuffedAtk() * (skill.baseMultiplier + extraMult);
-            Logger.log(`蓄力崩山！消耗 ${qiCost} 气，倍率 ${((skill.baseMultiplier + extraMult) * 100).toFixed(0)}%`);
+        // 崩山·极：消耗所有气（consumeAllQi 由 applyHammer extra spread 设置）
+        if (skill.consumeAllQi) {
+            qiCost = Math.max(8, this.resources.qi.val);
+            const extraQi = qiCost - 8;
+            const extraMult = extraQi * (skill.extraQiMultPerPoint || 1.0);
+            skill.calculatedDamage = this.getBuffedAtk() * (5.5 + extraMult);
+            Logger.log(`崩山·极！消耗 ${qiCost} 气，倍率 ${((5.5 + extraMult) * 100).toFixed(0)}%`);
+        }
+
+        // 架势系技能：effect === 'stance'（base架势；气合拳/龙腾通过 hammer extra 把 effect 清空）
+        if (skill.effect === 'stance') {
+            const shieldVal = Math.floor(this.getBuffedAtk() * 1.0);
+            this.shield += shieldVal;
+            this._usedStanceThisTurn = true;
+            this._tookHitAfterStance = false;
+            this._huijiAvailable = false;
+            Logger.log(`架势！护盾 +${shieldVal}`, true);
+            skill.calculatedDamage = 0;
+            if (!(typeof hasInfiniteResources === 'function' && hasInfiniteResources())) {
+                this.resources.qi.val -= qiCost;
+            }
+            if (typeof updateResourceUI === 'function') updateResourceUI();
+            if (typeof updateBuffBars === 'function') updateBuffBars();
+            return skill;
         }
 
         if (!(typeof hasInfiniteResources === 'function' && hasInfiniteResources())) {
@@ -398,169 +318,120 @@ class QiMaster extends Character {
             Logger.log(`使用 ${skill.name}（DEBUG：资源不消耗）`);
         }
 
-        // 迅影锤子：推进行动条
-        if (skill._activeHammer && skill._activeHammer.morph.extra && skill._activeHammer.morph.extra.avAdvance) {
-            if (typeof CTBSystem !== 'undefined') {
-                CTBSystem.advanceUnitAV(this, skill._activeHammer.morph.extra.avAdvance);
-                Logger.log(`迅影推进行动条 ${(skill._activeHammer.morph.extra.avAdvance * 100).toFixed(0)}%`);
-            }
-        }
-
-        updateResourceUI();
+        if (typeof updateResourceUI === 'function') updateResourceUI();
         return skill;
     }
 
-    onAction(action) {
-        if (action.type === 'skill' && action.skill && action.skill.cost && (action.skill.cost.qi || 0) >= 6) {
-            if (GameState.enemy) {
-                this._addInjuryStacks(GameState.enemy, 3);
+    onTurnStart() {
+        this.resources.qi.val = Math.min(this.resources.qi.max, this.resources.qi.val + 2);
+        Logger.log(`气宗：气+2 (当前 ${this.resources.qi.val}/${this.resources.qi.max})`);
+        this._usedStanceThisTurn = false;
+        this._tookHitAfterStance = false;
+        this._huijiAvailable = false;
+        if (typeof updateResourceUI === 'function') updateResourceUI();
+    }
 
-                // 引爆锤子
-                const devSkill = this.skills.find(s => s.id === 'devastate');
-                if (devSkill && devSkill._activeHammer && devSkill._activeHammer.morph.extra && devSkill._activeHammer.morph.extra.detonateInjury) {
-                    if (action.skill.id === 'devastate') {
-                        this._detonateInjury(GameState.enemy);
-                    }
-                }
+    onTurnEnd() {
+        // 架势回气：本回合使用架势且未受击
+        if (this._usedStanceThisTurn && !this._tookHitAfterStance) {
+            this.resources.qi.val = Math.min(this.resources.qi.max, this.resources.qi.val + 2);
+            Logger.log('架势：本回合未受击，气+2', true);
+            if (typeof updateResourceUI === 'function') updateResourceUI();
+        }
+        this._usedStanceThisTurn = false;
+        this._tookHitAfterStance = false;
+        this._huijiAvailable = false;
+    }
 
-                // 破山势升级
-                if (this.qiMountainCrush && action.skill.id === 'devastate' && this.qiMountainCrushStacks < 3) {
-                    this.qiMountainCrushStacks++;
-                    GameState.enemy.def = Math.max(0, GameState.enemy.def - 1);
-                    Logger.log(`破山势！目标DEF永久-1（已减${this.qiMountainCrushStacks}次）`, true);
-                }
+    takeDamage(damage) {
+        const died = super.takeDamage(damage);
+        if (damage > 0) {
+            this._tookHitAfterStance = true;
+            // 架势受击后：若已解锁回击，标记可用
+            if (this._usedStanceThisTurn && this._unlockedFollowUps.has('qi_follow_huiji')) {
+                this._huijiAvailable = true;
             }
         }
+        return died;
+    }
+
+    onAction(action) {
+        // 预留：后续可添加行动级回调
     }
 }
 
 // B. 剑圣 (Combo) - 行动积攒型
-// 疾风衰减：不攻击时每回合掉1层，被打掉2层
+// 资源：连击（0-10），初始0，每段命中+1连击。
+// 被动效果由魂灵提供；角色本身无被动。
 class ComboMaster extends Character {
     constructor(name, stats) {
         super('combo', name, stats);
         this.resources = {
             combo: { val: 0, max: 10, name: '连击' }
         };
-        this.speedStacks = 0;
-        this.comboGaleSpeedBonus = 0;
-        this.comboBladeWind = false;
-        this.comboGaleGuard = false;
-        this.comboAfterimage = false;
-        this._didActThisTurn = false;
-        this._extraActionUsed = false;
-        this.passive = {
-            desc: '每次攻击+1层【疾风】(每层+10速度,满10层+20%攻)。不攻击时每回合掉1层,被打掉2层。'
-        };
+        // 已解锁的追加技能集合（通过升级解锁）
+        this._unlockedFollowUps = new Set();
+        // 见切状态追踪
+        this._seeingStance = false;
+        this._perfectParryReady = false;
+        // 无角色被动；被动效果由魂灵提供
+        this.passive = null;
         this.initSkills();
     }
 
     initSkills() {
         this.skills = [
             createSkill({
-                id: 'quick_strike',
-                name: '疾风',
+                id: 'quick_slash',
+                name: '快斩',
                 type: 'attack',
                 cost: { combo: 0 },
-                baseMultiplier: 0.4,
-                damage: this.baseAtk * 0.4, // 单发40%
-                tags: ['Light', 'MultiHit', 'Melee'],
+                baseMultiplier: 0.8,
                 hits: 2,
-                desc: '2次打击，每次40%，总计80%，叠加1层【疾风】'
+                tags: ['Light', 'Melee', 'MultiHit'],
+                desc: '2段×80%，每段命中+1连击（共+2）'
             }),
             createSkill({
-                id: 'combo_strike',
+                id: 'chain_slash',
                 name: '连斩',
                 type: 'special',
-                cost: { combo: 0 },
-                baseMultiplier: 0.5,
-                damage: this.baseAtk * 0.5,
-                tags: ['Light', 'MultiHit', 'Melee'],
-                hits: 1, // Base hits, dynamic in execution
-                desc: '造成50%攻击力伤害，60%概率追加一次打击（最多5连斩），每次打击获得1连击点'
+                cost: { combo: 3 },
+                baseMultiplier: 0.8,
+                hits: 3,
+                tags: ['Special', 'Melee', 'MultiHit'],
+                desc: '3段×80%，每段+1连击（净±0）'
             }),
             createSkill({
                 id: 'finisher',
                 name: '终结技',
                 type: 'Ultimate',
-                cost: { combo: 6 }, // 固定消耗6
-                damage: 0, // 动态计算
-                tags: ['Heavy', 'Ultimate', 'Finisher', 'Melee'],
-                desc: '消耗6连击，造成450%攻击力'
+                cost: { combo: 6 },
+                baseMultiplier: 3.0,
+                noComboGain: true,
+                tags: ['Heavy', 'Ultimate', 'Melee'],
+                desc: '300%+额外连击×50%（10连击=500%）'
+            }),
+            createSkill({
+                id: 'kiri',
+                name: '见切',
+                type: 'defense',
+                cost: { combo: 0 },
+                baseMultiplier: 0,
+                noComboGain: true,
+                effect: 'kiri',
+                tags: ['Defense'],
+                desc: '获得攻击力50%护盾。受击自动反击80%+1连击。\n敌AV≤20时使用 → 完美格挡200%+2连击'
             })
         ];
     }
 
-    onTurnStart() {
-        // 疾风衰减：本回合没攻击则掉1层
-        if (!this._didActThisTurn && this.speedStacks > 0) {
-            this.speedStacks = Math.max(0, this.speedStacks - 1);
-            const perStack = 10 + (this.comboGaleSpeedBonus || 0);
-            this.speed = this.baseSpeed + this.speedStacks * perStack;
-            Logger.log(`【疾风】衰减！-1层（当前 ${this.speedStacks}层）`);
-        }
-        this._didActThisTurn = false;
-        this._extraActionUsed = false;
-
-        // 疾风护体：每层+1防御
-        if (this.comboGaleGuard && this.speedStacks > 0) {
-            this.def = 5 + this.speedStacks;
-        }
-        updateUI();
-    }
-
-    // 被打时掉疾风层数
-    takeDamage(damage) {
-        const died = super.takeDamage(damage);
-        if (this.speedStacks > 0 && damage > 0) {
-            const loss = Math.min(2, this.speedStacks);
-            this.speedStacks -= loss;
-            const perStack = 10 + (this.comboGaleSpeedBonus || 0);
-            this.speed = this.baseSpeed + this.speedStacks * perStack;
-            Logger.log(`【疾风】受击衰减-${loss}层（当前 ${this.speedStacks}层）`);
-            updateUI();
-        }
-        return died;
-    }
-
-    onAction(action) {
-        this._didActThisTurn = true;
-
-        if (action.type === 'skill' || action.type === 'attack') {
-            if (this.speedStacks < 10) {
-                this.speedStacks++;
-                const perStack = 10 + (this.comboGaleSpeedBonus || 0);
-                this.speed = this.baseSpeed + this.speedStacks * perStack;
-                Logger.log(`【疾风】叠层！当前 ${this.speedStacks} 层，速度 ${this.speed}`);
-                updateUI();
-            }
-        }
-        
-        if (action.skill && action.skill.id === 'quick_strike') {
-            if (this.speedStacks < 10) {
-                this.speedStacks++;
-                const perStack = 10 + (this.comboGaleSpeedBonus || 0);
-                this.speed = this.baseSpeed + this.speedStacks * perStack;
-                Logger.log(`【疾风】技能额外叠层！当前 ${this.speedStacks} 层，速度 ${this.speed}`);
-                updateUI();
-            }
-        }
-
-        // 刃风升级：满层时额外伤害（在main.js伤害计算中处理）
-        
-        // 连击积攒
-        if (action.skill && action.skill.id !== 'finisher') {
-             const gain = action.hits || action.skill.hits || 1;
-             this.resources.combo.val = Math.min(10, this.resources.combo.val + gain);
-             Logger.log(`连击 +${gain} (当前: ${this.resources.combo.val})`);
-             updateResourceUI();
-        }
+    addCombo(n) {
+        this.resources.combo.val = Math.min(10, this.resources.combo.val + n);
+        if (typeof updateResourceUI === 'function') updateResourceUI();
     }
 
     canUseSkill(skill) {
-        if (typeof hasInfiniteResources === 'function' && hasInfiniteResources()) {
-            return true;
-        }
+        if (typeof hasInfiniteResources === 'function' && hasInfiniteResources()) return true;
         return this.resources.combo.val >= (skill.cost.combo || 0);
     }
 
@@ -572,24 +443,139 @@ class ComboMaster extends Character {
             return false;
         }
 
-        if (skill.id === 'finisher') {
-            const cost = this.comboFinisherConsumeAll
-                ? Math.max(6, this.resources.combo.val)
-                : 6;
-            if (!(typeof hasInfiniteResources === 'function' && hasInfiniteResources())) {
-                this.resources.combo.val -= cost;
+        let comboCost = skill.cost.combo || 0;
+
+        // 见切（或流水/残像）
+        if (skill.effect === 'kiri') {
+            const shieldVal = Math.floor(this.getBuffedAtk() * 0.5);
+            this.shield += shieldVal;
+            this._seeingStance = true;
+            // 完美格挡：使用见切时敌方行动值 ≤ 20（即将行动的窗口期）
+            const enemyAV = (typeof GameState !== 'undefined' && GameState.enemy) ? (GameState.enemy.av || Infinity) : Infinity;
+            if (enemyAV <= 20) {
+                this._perfectParryReady = true;
+                Logger.log(`见切！完美格挡！（敌方AV=${enemyAV.toFixed(1)}）`, true);
+            } else {
+                this._perfectParryReady = false;
+                Logger.log(`见切！护盾 +${shieldVal}（敌方AV=${enemyAV.toFixed(1)}）`, true);
             }
-            const buffedAtk = this.getBuffedAtk ? this.getBuffedAtk() : this.baseAtk;
-            skill.damage = buffedAtk * (1.5 + 0.5 * cost); 
-            Logger.log(
-                (typeof hasInfiniteResources === 'function' && hasInfiniteResources())
-                    ? `使用 ${skill.name}（DEBUG：连击不消耗）`
-                    : `使用 ${skill.name}，消耗 ${cost} 连击`
-            );
+            skill.calculatedDamage = 0;
+            if (typeof updateResourceUI === 'function') updateResourceUI();
+            if (typeof updateBuffBars === 'function') updateBuffBars();
+            return skill;
         }
-        
-        updateResourceUI();
+
+        // 残像（kiri hammer extra.afterimageEffect → no damage, ATK+30% buff）
+        if (skill.afterimageEffect) {
+            this.addBuff({ name: '残像', type: 'buff', stat: 'atk', value: 0.3, duration: 2, desc: 'ATK+30%（2回合）' });
+            Logger.log('残像！ATK+30%（2回合）', true);
+            skill.calculatedDamage = 0;
+            if (typeof updateResourceUI === 'function') updateResourceUI();
+            return skill;
+        }
+
+        // 终结技：消耗所有连击（6+额外）
+        if (skillId === 'finisher' && !skill.pureHitsFinisher && !skill.issanEffect) {
+            const totalCombo = this.resources.combo.val;
+            const extra = Math.max(0, totalCombo - 6);
+            const mult = 3.0 + extra * 0.5;
+            skill.calculatedDamage = this.getBuffedAtk() * mult;
+            Logger.log(`终结技！消耗 ${totalCombo} 连击，倍率 ${(mult * 100).toFixed(0)}%`);
+            if (!(typeof hasInfiniteResources === 'function' && hasInfiniteResources())) {
+                this.resources.combo.val = 0;
+            }
+            if (typeof updateResourceUI === 'function') updateResourceUI();
+            return skill;
+        }
+
+        // 一闪（finisher hammer: 10连击 700%）
+        if (skill.issanEffect) {
+            comboCost = 10;
+            skill.calculatedDamage = this.getBuffedAtk() * 7.0;
+            Logger.log(`一闪！消耗 ${comboCost} 连击`);
+            if (!(typeof hasInfiniteResources === 'function' && hasInfiniteResources())) {
+                this.resources.combo.val -= comboCost;
+            }
+            if (typeof updateResourceUI === 'function') updateResourceUI();
+            return skill;
+        }
+
+        // 普通技能（快斩/连斩及其变体）
+        if (!(typeof hasInfiniteResources === 'function' && hasInfiniteResources())) {
+            this.resources.combo.val -= comboCost;
+            Logger.log(`使用 ${skill.name}，消耗 ${comboCost} 连击`);
+        } else {
+            Logger.log(`使用 ${skill.name}（DEBUG：资源不消耗）`);
+        }
+        if (typeof updateResourceUI === 'function') updateResourceUI();
         return skill;
+    }
+
+    onTurnStart() {
+        this._seeingStance = false;
+        this._perfectParryReady = false;
+        if (typeof updateResourceUI === 'function') updateResourceUI();
+    }
+
+    onTurnEnd() {
+        this._seeingStance = false;
+        this._perfectParryReady = false;
+    }
+
+    takeDamage(damage) {
+        const died = super.takeDamage(damage);
+        if (damage > 0 && this._seeingStance) {
+            const mult = this._perfectParryReady ? 2.0 : 0.8;
+            const comboGain = this._perfectParryReady ? 2 : 1;
+            this._seeingStance = false;
+            this._perfectParryReady = false;
+            Logger.log(mult >= 2.0 ? '完美格挡！' : '见切！', true);
+            // 延迟反击（等受击动画结束）
+            setTimeout(() => {
+                if (!GameState.isBattleEnded && GameState.enemy) {
+                    const rawDmg = this.getBuffedAtk() * mult;
+                    const def = GameState.enemy.def || 0;
+                    const finalDmg = Math.max(1, rawDmg - def);
+                    GameState.enemy.takeDamage(finalDmg);
+                    this.addCombo(comboGain);
+                    if (typeof SFX !== 'undefined') SFX.hit();
+                    if (typeof recordSkillDamageStat === 'function') {
+                        recordSkillDamageStat('skill:kiri', mult >= 2.0 ? '完美格挡' : '见切反击', finalDmg);
+                    }
+                    Logger.log(`${mult >= 2.0 ? '完美格挡反击' : '见切反击'}！造成 ${finalDmg.toFixed(1)} 点伤害，连击+${comboGain}`, true);
+                    const enemyPos = typeof getUnitCenter === 'function' ? getUnitCenter('enemy-box') : null;
+                    if (enemyPos && typeof ParticleSystem !== 'undefined') {
+                        ParticleSystem.showDamageNumber(enemyPos.x, enemyPos.y - 20, finalDmg, '#ffd54f',
+                            mult >= 2.0 ? '完美格挡!' : '反击!', { holdMs: 500, fadeMs: 900, floatDistance: 30 });
+                        ParticleSystem.createImpact(enemyPos.x, enemyPos.y, mult >= 2.0 ? 'heavy' : 'light', '#ffd54f');
+                    }
+                    // 追击追加（若已解锁）
+                    if (this._unlockedFollowUps.has('combo_follow_kiri_chase')) {
+                        const fu = typeof FollowUpSkillDefs !== 'undefined' ? FollowUpSkillDefs['combo_follow_kiri_chase'] : null;
+                        if (fu && fu.canUse(this)) {
+                            const r = fu.execute(this, GameState.enemy);
+                            if (r && r.damage > 0 && GameState.enemy && !GameState.isBattleEnded) {
+                                const chaseDmg = Math.max(1, r.damage - def);
+                                GameState.enemy.takeDamage(chaseDmg);
+                                this.addCombo(r.comboGain || 1);
+                                Logger.log(`追击！造成 ${chaseDmg.toFixed(1)} 点伤害`, true);
+                            }
+                        }
+                    }
+                    if (GameState.enemy && GameState.enemy.hp <= 0 && !GameState.isBattleEnded && typeof winBattle === 'function') {
+                        GameState.isBattleEnded = true;
+                        winBattle();
+                    }
+                    if (typeof updateUI === 'function') updateUI();
+                    if (typeof updateBuffBars === 'function') updateBuffBars();
+                }
+            }, 350);
+        }
+        return died;
+    }
+
+    onAction(action) {
+        // 连击积攒通过 main.js 的 per-hit 逻辑处理（每段命中+1连击）
     }
 }
 
@@ -800,7 +786,7 @@ class BalanceMaster extends Character {
                 baseMultiplier: 1.0,
                 balanceShift: -3,
                 tags: ['Yin', 'Melee'],
-                desc: '平衡-3，造成100%伤害，施加侵蚀(ATK×20%回合伤)'
+                desc: '平衡-3，造成100%伤害，施加侵蚀（攻击力20%/回合）'
             }),
             createSkill({
                 id: 'verdict',
@@ -1158,11 +1144,29 @@ function getEnemyDef() {
 function applySpiritDamage(rawDamage, label = '魂灵') {
     if (!GameState.enemy) return 0;
     let finalDamage = Math.max(1, rawDamage - getEnemyDef());
-    if (GameState.enemy.internalInjury > 0) {
-        finalDamage *= 1.3;
+    // 新内伤系统：spiritInjury（由气息魂管理）
+    if ((GameState.enemy.spiritInjury || 0) > 0) {
+        const vuln = GameState.enemy.spiritInjuryVuln || 1.2;
+        finalDamage *= vuln;
+        GameState.enemy.spiritInjury = Math.max(0, GameState.enemy.spiritInjury - 1);
+        // 回流分支：内伤被消耗时玩家ATK+1
+        const spirit = GameState.spirit;
+        if (spirit && spirit.state && spirit.state.branchReflux && GameState.player) {
+            GameState.player.baseAtk = (GameState.player.baseAtk || 10) + 1;
+            Logger.log(`【回流】触发！玩家ATK +1（当前 ${GameState.player.baseAtk}）`);
+        }
+        if (typeof updateBuffBars === 'function') updateBuffBars();
     }
     GameState.enemy.hp = Math.max(0, GameState.enemy.hp - finalDamage);
+    if (typeof recordSkillDamageStat === 'function') {
+        const sid = (GameState.spirit && GameState.spirit.id) ? GameState.spirit.id : label;
+        const sname = (GameState.spirit && GameState.spirit.name)
+            ? `魂灵·${GameState.spirit.name}`
+            : `魂灵·${label}`;
+        recordSkillDamageStat(`spirit:${sid}`, sname, finalDamage);
+    }
     Logger.log(`${label} 造成 ${finalDamage.toFixed(1)} 点伤害`);
+    if (typeof SFX !== 'undefined') SFX.hit();
     const enemyPos = typeof getUnitCenter === 'function' ? getUnitCenter('enemy-box') : null;
     if (enemyPos && typeof ParticleSystem !== 'undefined') {
         ParticleSystem.showDamageNumber(enemyPos.x, enemyPos.y - 20, finalDamage, '#ffd54f', label, { holdMs: 450, fadeMs: 900, floatDistance: 25 });
@@ -1200,6 +1204,9 @@ class Spirit {
         this.tunables = config.tunables || {};
         this.visual = config.visual || {};
         this.hooks = config.hooks || {};
+        // UI 展示用：被动技能列表 + 魂灵主动/自动技能列表
+        this.passives = config.passives || [];
+        this.spiritSkills = config.spiritSkills || [];
     }
 
     updateVisualState() {
@@ -1260,110 +1267,95 @@ class Spirit {
     }
 }
 
+// ==================== 新魂灵目录（当前版本：气息魂 + 连击魂）====================
+// 旧魂灵（守卫/誓盟/领主/伴侣/侍从/协奏/书记/信使/商人）暂时屏蔽
 const SpiritCatalog = {
-    autonomous: [
+    spiritual: [
         {
-            id: 'guardian',
-            name: '守卫',
-            icon: '🛡️',
-            spiritType: 'autonomous',
-            speed: 140,
-            desc: '行动后提供100%攻击力护盾；若上一次技能消耗≥6资源，护盾反射等量伤害',
-            visual: { color: '#66ccff' },
-            tunables: { shieldMult: 1.0, reflectThreshold: 6 }
+            id: 'qi_spirit',
+            name: '气息魂',
+            icon: '🌊',
+            spiritType: 'spiritual_passive',
+            timeline: false,
+            desc: '被动型魂灵。单次消耗≥6气时自动触发攻击并附加【内伤】；累计消耗12气触发旋风斩；释放特技时触发续剑。',
+            visual: { color: '#ff6644' },
+            // 被动技能列表（用于UI展示）
+            passives: [
+                {
+                    id: 'qis_inner_wound',
+                    name: '内伤',
+                    icon: 'assets/art/icons/skill_types/type_passive_v2.png',
+                    desc: '单次消耗≥6气时：魂灵攻击100%，对目标附加【内伤】（下次受击伤害+20%）'
+                }
+            ],
+            // 魂灵技能列表（旋风斩/续剑自动触发，显示在魂灵区）
+            spiritSkills: [
+                {
+                    id: 'qis_whirlwind',
+                    name: '旋风斩',
+                    icon: 'assets/art/icons/skill_types/type_followup_v2.png',
+                    desc: '3段×100%攻击力（累计消耗12气触发）',
+                    autoTrigger: true
+                },
+                {
+                    id: 'qis_continuation',
+                    name: '续剑',
+                    icon: 'assets/art/icons/skill_types/type_followup_v2.png',
+                    desc: '80%攻击力追加（释放特技时触发）',
+                    autoTrigger: true
+                }
+            ]
         },
         {
-            id: 'oath',
-            name: '誓盟',
-            icon: '⚔️',
-            spiritType: 'autonomous',
-            speed: 140,
-            desc: '行动时造成100%攻击力伤害；玩家每次命中使其行动提前20%',
-            visual: { color: '#ffd54f' },
-            tunables: { damageMult: 1.0, advanceRatio: 0.2 }
-        },
-        {
-            id: 'lord',
-            name: '领主',
-            icon: '👑',
-            spiritType: 'autonomous',
-            speed: 120,
-            desc: '行动时造成150%攻击力伤害；每消耗1点资源本次伤害+10%',
-            visual: { color: '#ff8a65' },
-            tunables: { baseMult: 1.5, spendBonus: 0.1 }
-        }
-    ],
-    cooperative: [
-        {
-            id: 'partner',
-            name: '伴侣',
-            icon: '💕',
-            spiritType: 'cooperative',
-            desc: '玩家每次攻击后追加80%攻击力伤害',
-            visual: { color: '#ffeb3b' },
-            tunables: { followMult: 0.8 }
-        },
-        {
-            id: 'attendant',
-            name: '侍从',
-            icon: '🗡️',
-            spiritType: 'cooperative',
-            desc: '攻击/特技追加60%伤害；能量技追加120%伤害',
-            visual: { color: '#ffca28' },
-            tunables: { lightMult: 0.6, heavyMult: 1.2 }
-        },
-        {
-            id: 'concerto',
-            name: '协奏',
-            icon: '🎶',
-            spiritType: 'cooperative',
-            desc: '攻击/特技叠加【蓄势】；能量技追加120%*(1+25%层数)并清空',
-            visual: { color: '#ffe082' },
-            tunables: { baseMult: 1.2, stackBonus: 0.25, maxStacks: 5 }
-        }
-    ],
-    assistant: [
-        {
-            id: 'scribe',
-            name: '书记',
-            icon: '📖',
-            spiritType: 'assistant',
-            desc: '攻击/特技叠【记录】；能量技前每层+10%伤害并回10%资源',
-            visual: { color: '#f48fb1' },
-            tunables: { damageBonusPerStack: 0.1, resourceReturnRatio: 0.1, maxStacks: 5 }
-        },
-        {
-            id: 'messenger',
-            name: '信使',
-            icon: '📜',
-            spiritType: 'assistant',
-            desc: '发布行动任务，完成后获得随机奖励并刷新任务',
-            visual: { color: '#f06292' }
-        },
-        {
-            id: 'merchant',
-            name: '商人',
-            icon: '💰',
-            spiritType: 'assistant',
+            id: 'combo_spirit',
+            name: '连击魂',
+            icon: '⚡',
+            spiritType: 'spiritual_active',
             timeline: true,
-            speed: 200,
-            desc: '行动时获得1金币；资源满溢额外得币；能量技消耗金币回资源(每枚10%)',
-            visual: { color: '#ff7043' },
-            tunables: { coinGain: 1, returnPerCoin: 0.1 }
+            speed: 150,
+            desc: '手操型魂灵。玩家每次行动+1层【疾风】（每层+10速度，上限10层）。魂灵行动到达时，选择释放斩风或飞驰步。',
+            visual: { color: '#ffcc44' },
+            passives: [
+                {
+                    id: 'cs_gale',
+                    name: '疾风',
+                    icon: 'assets/art/icons/skill_types/type_passive_v2.png',
+                    desc: '玩家每次行动+1层疾风（每层+10速度），上限10层。仅通过魂灵技能消耗，不自然衰减'
+                }
+            ],
+            spiritSkills: [
+                {
+                    id: 'cs_slash_wind',
+                    name: '斩风',
+                    icon: 'assets/art/icons/skill_types/type_special_v2.png',
+                    cost: 2,
+                    costUnit: '疾风',
+                    desc: '2段×90%攻击力伤害',
+                    autoTrigger: false
+                },
+                {
+                    id: 'cs_dash_step',
+                    name: '飞驰步',
+                    icon: 'assets/art/icons/skill_types/type_ultimate_v2.png',
+                    cost: 5,
+                    costUnit: '疾风',
+                    desc: '100%伤害，玩家立即再行动一次',
+                    autoTrigger: false
+                }
+            ]
         }
     ]
 };
 
+/** 获取全部可用魂灵配置 */
+function getAllSpiritCatalogEntries() {
+    return Object.values(SpiritCatalog).flat();
+}
+
+/** 魂灵选择：当前版本只展示气息魂和连击魂 */
 function getRandomSpiritChoices() {
-    const categories = Object.keys(SpiritCatalog);
-    const category = categories[Math.floor(Math.random() * categories.length)];
-    const list = SpiritCatalog[category].slice();
-    const choices = [];
-    while (choices.length < 3 && list.length > 0) {
-        const idx = Math.floor(Math.random() * list.length);
-        choices.push(list.splice(idx, 1)[0]);
-    }
-    return { category, choices };
+    const spirits = SpiritCatalog.spiritual || [];
+    return { category: 'spiritual', choices: [...spirits] };
 }
 
 function createSpirit(spiritId) {
@@ -1563,7 +1555,169 @@ function createSpirit(spiritId) {
         }
     };
 
-    const hookSet = hooks[spirit.id];
+    // ── 新魂灵 hooks ──
+    const newSpiritHooks = {
+        qi_spirit: {
+            onPlayerAction: (self, action) => {
+                // 记录本次气消耗，供 onAfterSkill 使用
+                self.state.lastQiCost = action.qiCost || (action.cost ? (action.cost.qi || 0) : 0);
+            },
+            onAfterSkill: (self, context) => {
+                if (!context || !GameState.player || !GameState.enemy) return;
+                if (GameState.isBattleEnded) return;
+                const player = GameState.player;
+                const enemy = GameState.enemy;
+                const skill = context.skill;
+                const qiCost = context.qiCost || self.state.lastQiCost || 0;
+                const atk = getEffectivePlayerAtk(player);
+
+                // ── Step 1: 续剑（特技类技能触发）──
+                const isSpecial = skill && (skill.type === 'special' || (skill.tags && skill.tags.includes('Special')));
+                if (isSpecial) {
+                    self.state.xujiianCount = (self.state.xujiianCount || 0) + 1;
+                    const cnt = self.state.xujiianCount;
+                    let mult = self.state.xujiianMult || 0.8;
+                    // 续剑·终（强化3）：连续第3次升格为160%
+                    if (self.state.xujiianUpgrade3 && cnt >= 3) {
+                        mult = 1.6;
+                        self.state.xujiianCount = 0;
+                        Logger.log('续剑·终！', true);
+                    } else {
+                        Logger.log('续剑触发！', true);
+                    }
+                    // 续剑强化2：回复1气
+                    if (self.state.xujiianUpgrade2) {
+                        player.resources.qi.val = Math.min(10, player.resources.qi.val + 1);
+                        if (typeof updateResourceUI === 'function') updateResourceUI();
+                    }
+                    setTimeout(() => applySpiritDamage(atk * mult, '续剑'), 50);
+                } else {
+                    self.state.xujiianCount = 0;
+                }
+
+                // ── Step 2: 旋风斩累计（+本次消耗量）──
+                self.state.qiCostAccum = (self.state.qiCostAccum || 0) + qiCost;
+                const threshold = self.state.whirlwindThreshold || 12;
+                if (self.state.qiCostAccum >= threshold) {
+                    self.state.qiCostAccum -= threshold;
+                    const segments = self.state.whirlwindSegments || 3;
+                    Logger.log(`旋风斩触发！${segments}段攻击`, true);
+                    for (let i = 0; i < segments; i++) {
+                        setTimeout(() => applySpiritDamage(atk * 1.0, '旋风斩'), 100 + i * 150);
+                    }
+                    if (typeof updateBuffBars === 'function') setTimeout(updateBuffBars, 100 + segments * 150);
+                }
+
+                // ── Step 3: 内伤被动（单次消耗≥6气）──
+                if (qiCost >= 6) {
+                    setTimeout(() => {
+                        if (GameState.isBattleEnded) return;
+                        applySpiritDamage(atk * 1.0, '气息魂');
+                        // 附加内伤
+                        if (!enemy.spiritInjury) enemy.spiritInjury = 0;
+                        if (self.state.branchMode === 'explosion') {
+                            // 内爆分支：叠层，满3层爆发
+                            enemy.spiritInjury = Math.min(3, enemy.spiritInjury + 1);
+                            enemy.spiritInjuryVuln = 1.2;
+                            Logger.log(`【内伤】+1层（${enemy.spiritInjury}/3）`, true);
+                            if (enemy.spiritInjury >= 3) {
+                                enemy.spiritInjury = 0;
+                                setTimeout(() => {
+                                    const burstDmg = getEffectivePlayerAtk(player) * 3.0;
+                                    applySpiritDamage(burstDmg, '内爆！');
+                                    Logger.log('【内爆】！爆发300%！', true);
+                                    if (typeof updateBuffBars === 'function') updateBuffBars();
+                                }, 200);
+                            }
+                        } else {
+                            // 基础/重伤：1层
+                            enemy.spiritInjury = 1;
+                            enemy.spiritInjuryVuln = self.state.branchMode === 'heavy' ? 1.6 : 1.2;
+                            Logger.log(`【内伤】附加！（易伤+${Math.round((enemy.spiritInjuryVuln - 1) * 100)}%）`, true);
+                        }
+                        if (typeof updateBuffBars === 'function') updateBuffBars();
+                    }, 80);
+                }
+            },
+            getStatusText: (self) => {
+                const accum = self.state.qiCostAccum || 0;
+                const threshold = self.state.whirlwindThreshold || 12;
+                return `气积 ${accum}/${threshold}`;
+            }
+        },
+
+        combo_spirit: {
+            onPlayerAction: (self, action) => {
+                if (!GameState.player) return;
+                const player = GameState.player;
+
+                // +1层疾风
+                self.state.galeStacks = Math.min(10, (self.state.galeStacks || 0) + 1);
+
+                // 乘风分支：魂灵速度也受疾风加速
+                if (self.state.branchRiding) {
+                    self.speed = 150 + self.state.galeStacks * 5;
+                }
+
+                // 狂风分支：每累计5层自动全体150%
+                if (self.state.branchStorm) {
+                    self.state.galeAccumForStorm = (self.state.galeAccumForStorm || 0) + 1;
+                    if (self.state.galeAccumForStorm >= 5) {
+                        self.state.galeAccumForStorm = 0;
+                        setTimeout(() => {
+                            if (!GameState.isBattleEnded) {
+                                applySpiritDamage(getEffectivePlayerAtk(player) * 1.5, '狂风');
+                                Logger.log('【狂风】触发！', true);
+                            }
+                        }, 50);
+                    }
+                }
+
+                // 更新玩家速度（疾风每层+10速度）
+                player.speed = player.baseSpeed + self.state.galeStacks * 10;
+                if (typeof updateUI === 'function') updateUI();
+
+                // 交错计数：上次是魂灵行动，这次是玩家行动 → +1
+                if (self.state.lastActor === 'spirit') {
+                    self.state.crossCount = (self.state.crossCount || 0) + 1;
+                }
+                self.state.lastActor = 'player';
+
+                // 交错之斩：≥3次交错
+                if ((self.state.crossCount || 0) >= 3) {
+                    self.state.crossCount = 0;
+                    const crossAtk = getEffectivePlayerAtk(player);
+                    setTimeout(() => {
+                        if (GameState.isBattleEnded) return;
+                        applySpiritDamage(crossAtk * 1.5, '交错之斩·魂');
+                        applySpiritDamage(crossAtk * 1.5, '交错之斩·人');
+                        Logger.log('【交错之斩】触发！', true);
+                        // 交错强化1：易伤debuff
+                        if (self.state.crossUpgrade1 && GameState.enemy) {
+                            GameState.enemy.addBuff({
+                                name: '交错·易伤', type: 'debuff', stat: 'vulnerability',
+                                value: 0.2, duration: 1, desc: '受伤+20%（1回合）'
+                            });
+                        }
+                        if (typeof updateBuffBars === 'function') updateBuffBars();
+                    }, 100);
+                }
+            },
+            onSpiritTurn: (self) => {
+                // 连击魂轮到行动时，展示技能选择UI
+                GameState.spiritTurnPending = {
+                    spirit: self,
+                    callback: null
+                };
+                return { delayMs: 0, interactive: true };
+            },
+            getStatusText: (self) => {
+                return `疾风 ${self.state.galeStacks || 0}/10`;
+            }
+        }
+    };
+
+    const hookSet = hooks[spirit.id] || newSpiritHooks[spirit.id];
     if (hookSet) {
         spirit.hooks = hookSet;
     }
@@ -1667,115 +1821,176 @@ function pickMessengerReward() {
 // ==================== 追加技能系统 ====================
 
 const FollowUpSkillDefs = {
-    qi_follow_strike: {
-        id: 'qi_follow_strike',
-        name: '追击',
-        desc: '追加100%攻击力打击，消耗1气。内伤目标伤害+50%',
+    // ── 气宗追加技能（通过锤子升级解锁，由 _unlockedFollowUps 控制可见性）──
+    qi_follow_lianquan: {
+        id: 'qi_follow_lianquan',
+        name: '连拳',
+        desc: '轻拳命中后必定触发。追加80%攻击力打击，不消耗气',
         icon: '👊',
         tags: ['Light', 'Melee', 'FollowUp'],
-        cost: { qi: 1 },
-        costDesc: '1 气',
+        cost: { qi: 0 },
+        costDesc: '无',
+        isUnlocked(player) {
+            return player && player._unlockedFollowUps && player._unlockedFollowUps.has('qi_follow_lianquan');
+        },
         canUse(player) {
-            if (typeof hasInfiniteResources === 'function' && hasInfiniteResources()) return true;
-            return player && player.resources.qi.val >= 1;
+            return this.isUnlocked(player);
         },
         execute(player, enemy) {
             if (!player || !enemy) return { damage: 0 };
-            if (!(typeof hasInfiniteResources === 'function' && hasInfiniteResources())) {
-                player.resources.qi.val -= 1;
-            }
-            let dmg = player.getBuffedAtk() * 1.0;
-            if (enemy.internalInjury > 0) dmg *= 1.5;
-            updateResourceUI();
+            const dmg = player.getBuffedAtk() * 0.8;
             return { damage: dmg, hits: 1, isRanged: false };
         }
     },
-    qi_follow_force: {
-        id: 'qi_follow_force',
-        name: '劲气',
-        desc: '造成60%攻击力伤害，推迟敌人行动条20%。消耗1气',
+    qi_follow_zhenpuo: {
+        id: 'qi_follow_zhenpuo',
+        name: '震破',
+        desc: '崩山后可用。造成150%攻击力伤害，推迟目标行动条20%，消耗2气',
         icon: '💫',
-        tags: ['Utility', 'Melee', 'FollowUp'],
-        cost: { qi: 1 },
-        costDesc: '1 气',
+        tags: ['Melee', 'FollowUp'],
+        cost: { qi: 2 },
+        costDesc: '2 气',
+        isUnlocked(player) {
+            return player && player._unlockedFollowUps && player._unlockedFollowUps.has('qi_follow_zhenpuo');
+        },
         canUse(player) {
+            if (!this.isUnlocked(player)) return false;
             if (typeof hasInfiniteResources === 'function' && hasInfiniteResources()) return true;
-            return player && player.resources.qi.val >= 1;
+            return player && player.resources.qi.val >= 2;
         },
         execute(player, enemy) {
             if (!player || !enemy) return { damage: 0 };
             if (!(typeof hasInfiniteResources === 'function' && hasInfiniteResources())) {
-                player.resources.qi.val -= 1;
+                player.resources.qi.val -= 2;
             }
-            const dmg = player.getBuffedAtk() * 0.6;
+            const dmg = player.getBuffedAtk() * 1.5;
             if (typeof delayUnitAV === 'function') {
                 delayUnitAV(enemy, 0.2);
+                Logger.log('震破推迟敌人行动条20%', true);
             }
-            Logger.log('劲气推迟敌人行动条20%', true);
-            updateResourceUI();
+            if (typeof updateResourceUI === 'function') updateResourceUI();
             return { damage: dmg, hits: 1, isRanged: false };
         }
     },
-    combo_follow_spin: {
-        id: 'combo_follow_spin',
-        name: '回旋斩',
-        desc: '追加80%攻击力单段攻击，叠加1层疾风。消耗1连击',
-        icon: '⚔',
+    qi_follow_huiji: {
+        id: 'qi_follow_huiji',
+        name: '回击',
+        desc: '架势受击后可用。造成120%攻击力伤害，回复2气，不消耗气',
+        icon: '🛡️',
+        tags: ['Melee', 'FollowUp'],
+        cost: { qi: 0 },
+        costDesc: '无',
+        isUnlocked(player) {
+            return player && player._unlockedFollowUps && player._unlockedFollowUps.has('qi_follow_huiji');
+        },
+        canUse(player) {
+            return this.isUnlocked(player) && !!(player && player._huijiAvailable);
+        },
+        execute(player, enemy) {
+            if (!player || !enemy) return { damage: 0 };
+            player._huijiAvailable = false;
+            const dmg = player.getBuffedAtk() * 1.2;
+            player.resources.qi.val = Math.min(10, player.resources.qi.val + 2);
+            Logger.log('回击！气+2', true);
+            if (typeof updateResourceUI === 'function') updateResourceUI();
+            return { damage: dmg, hits: 1, isRanged: false };
+        }
+    },
+    // ── 剑圣追加技能（通过锤子升级解锁，由 _unlockedFollowUps 控制可见性）──
+    combo_follow_ranwu: {
+        id: 'combo_follow_ranwu',
+        name: '乱舞',
+        desc: '快斩后必定追加。60%攻击力，+1连击；50%概率继续触发乱舞·破（需解锁）',
+        icon: '⚔️',
         tags: ['Light', 'Melee', 'FollowUp'],
-        cost: { combo: 1 },
-        costDesc: '1 连击',
-        canUse(player) {
-            if (typeof hasInfiniteResources === 'function' && hasInfiniteResources()) return true;
-            return player && player.resources.combo.val >= 1;
+        cost: { combo: 0 },
+        costDesc: '无',
+        isUnlocked(player) {
+            return player && player._unlockedFollowUps && player._unlockedFollowUps.has('combo_follow_ranwu');
         },
+        canUse(player) { return this.isUnlocked(player); },
         execute(player, enemy) {
             if (!player || !enemy) return { damage: 0 };
-            if (!(typeof hasInfiniteResources === 'function' && hasInfiniteResources())) {
-                player.resources.combo.val -= 1;
-            }
-            let dmg = player.getBuffedAtk() * 0.8;
-            if (player.speedStacks >= 10) dmg *= 1.2;
-            // 叠1层疾风（追加不触发被动的"叠层"，但回旋斩自带叠层效果）
-            if (player.speedStacks < 10) {
-                player.speedStacks++;
-                const perStack = 10 + (player.comboGaleSpeedBonus || 0);
-                player.speed = player.baseSpeed + player.speedStacks * perStack;
-                Logger.log(`【疾风】+1层（当前${player.speedStacks}层）`);
-            }
-            updateResourceUI();
-            return { damage: dmg, hits: 1, isRanged: false };
+            const dmg = player.getBuffedAtk() * 0.6;
+            const canChain = player._unlockedFollowUps && player._unlockedFollowUps.has('combo_follow_ranwu_po') && Math.random() < 0.5;
+            return { damage: dmg, hits: 1, isRanged: false, comboGain: 1,
+                chainId: canChain ? 'combo_follow_ranwu_po' : null };
         }
     },
-    combo_follow_expose: {
-        id: 'combo_follow_expose',
-        name: '破绽',
-        desc: '造成50%攻击力伤害，敌人防御-2（2回合）。消耗1连击',
-        icon: '🎯',
-        tags: ['Melee', 'Utility', 'FollowUp'],
-        cost: { combo: 1 },
-        costDesc: '1 连击',
-        canUse(player) {
-            if (typeof hasInfiniteResources === 'function' && hasInfiniteResources()) return true;
-            return player && player.resources.combo.val >= 1;
+    combo_follow_ranwu_po: {
+        id: 'combo_follow_ranwu_po',
+        name: '乱舞·破',
+        desc: '乱舞后50%概率追加。80%攻击力，+1连击；50%概率继续触发乱舞·急（需解锁）',
+        icon: '⚔️',
+        tags: ['Light', 'Melee', 'FollowUp'],
+        cost: { combo: 0 },
+        costDesc: '无',
+        isUnlocked(player) {
+            return player && player._unlockedFollowUps && player._unlockedFollowUps.has('combo_follow_ranwu_po');
         },
+        canUse(player) { return this.isUnlocked(player); },
         execute(player, enemy) {
             if (!player || !enemy) return { damage: 0 };
-            if (!(typeof hasInfiniteResources === 'function' && hasInfiniteResources())) {
-                player.resources.combo.val -= 1;
-            }
-            let dmg = player.getBuffedAtk() * 0.5;
-            if (player.speedStacks >= 10) dmg *= 1.2;
-            enemy.addBuff({
-                name: '破绽',
-                type: 'debuff',
-                stat: 'def',
-                value: -2,
-                duration: 2,
-                desc: '防御降低2'
-            });
-            Logger.log('施加【破绽】！敌方DEF-2(2回合)', true);
-            updateResourceUI();
-            return { damage: dmg, hits: 1, isRanged: false };
+            const dmg = player.getBuffedAtk() * 0.8;
+            const canChain = player._unlockedFollowUps && player._unlockedFollowUps.has('combo_follow_ranwu_ji') && Math.random() < 0.5;
+            return { damage: dmg, hits: 1, isRanged: false, comboGain: 1,
+                chainId: canChain ? 'combo_follow_ranwu_ji' : null };
+        }
+    },
+    combo_follow_ranwu_ji: {
+        id: 'combo_follow_ranwu_ji',
+        name: '乱舞·急',
+        desc: '乱舞·破后50%概率追加。120%攻击力，+1连击',
+        icon: '⚔️',
+        tags: ['Special', 'Melee', 'FollowUp'],
+        cost: { combo: 0 },
+        costDesc: '无',
+        isUnlocked(player) {
+            return player && player._unlockedFollowUps && player._unlockedFollowUps.has('combo_follow_ranwu_ji');
+        },
+        canUse(player) { return this.isUnlocked(player); },
+        execute(player, enemy) {
+            if (!player || !enemy) return { damage: 0 };
+            const dmg = player.getBuffedAtk() * 1.2;
+            return { damage: dmg, hits: 1, isRanged: false, comboGain: 1 };
+        }
+    },
+    combo_follow_zanxin: {
+        id: 'combo_follow_zanxin',
+        name: '残心',
+        desc: '终结技后可追加。100%攻击力，回复3连击（为下轮循环起手）',
+        icon: '🌀',
+        tags: ['Melee', 'FollowUp'],
+        cost: { combo: 0 },
+        costDesc: '无',
+        isUnlocked(player) {
+            return player && player._unlockedFollowUps && player._unlockedFollowUps.has('combo_follow_zanxin');
+        },
+        canUse(player) { return this.isUnlocked(player); },
+        execute(player, enemy) {
+            if (!player || !enemy) return { damage: 0 };
+            const dmg = player.getBuffedAtk() * 1.0;
+            if (typeof player.addCombo === 'function') player.addCombo(3);
+            Logger.log('残心：回复3连击', true);
+            return { damage: dmg, hits: 1, isRanged: false, comboGain: 0 }; // comboGain=0, 已通过addCombo处理
+        }
+    },
+    combo_follow_kiri_chase: {
+        id: 'combo_follow_kiri_chase',
+        name: '追击',
+        desc: '见切反击后自动追加。80%攻击力，+1连击',
+        icon: '💨',
+        tags: ['Melee', 'FollowUp'],
+        cost: { combo: 0 },
+        costDesc: '无',
+        isUnlocked(player) {
+            return player && player._unlockedFollowUps && player._unlockedFollowUps.has('combo_follow_kiri_chase');
+        },
+        canUse(player) { return this.isUnlocked(player); },
+        execute(player, enemy) {
+            if (!player || !enemy) return { damage: 0 };
+            const dmg = player.getBuffedAtk() * 0.8;
+            return { damage: dmg, hits: 1, isRanged: false, comboGain: 1 };
         }
     },
     mana_follow_aftershock: {
@@ -1843,16 +2058,44 @@ const FollowUpSkillDefs = {
 };
 
 // 来源技能 → 触发率 + 展示的追加列表
+// 气宗追加：rate:1.0（解锁后必触发），通过各技能 canUse() 中的 isUnlocked 过滤可见性
 const FollowUpTriggers = {
     qi: {
-        light_strike:  { rate: 0.33, skills: ['qi_follow_strike', 'qi_follow_force'] },
-        rapid_strike:  { rate: 0.33, skills: ['qi_follow_strike', 'qi_follow_force'] },
-        devastate:     { rate: 0.33, skills: ['qi_follow_force'] }
+        // 轻拳：触发连拳 + 回击（若可用）
+        light_punch: {
+            rate: 1.0,
+            skills: ['qi_follow_lianquan', 'qi_follow_huiji']
+        },
+        // 迅击（及其锤子变体）：正常迅击无追加；闪击锤子时触发全部已解锁追加
+        rapid_strike: {
+            rate: 1.0,
+            skills: ['qi_follow_lianquan', 'qi_follow_zhenpuo', 'qi_follow_huiji'],
+            condition: (player) => {
+                const rs = player.skills && player.skills.find(s => s.id === 'rapid_strike');
+                return !!(rs && rs.isFlash);
+            }
+        },
+        // 崩山：触发震破 + 回击（若可用）
+        devastate: {
+            rate: 1.0,
+            skills: ['qi_follow_zhenpuo', 'qi_follow_huiji']
+        },
+        // 架势：不触发追加（回击由 takeDamage 标记，在 light_punch/devastate 触发时检测）
     },
+    // 剑圣追加：rate:1.0，通过 canUse().isUnlocked() 过滤
     combo: {
-        quick_strike:  { rate: 0.35, skills: ['combo_follow_spin', 'combo_follow_expose'] },
-        combo_strike:  { rate: 0.35, skills: ['combo_follow_spin', 'combo_follow_expose'] },
-        finisher:      { rate: 0.35, skills: ['combo_follow_expose'] }
+        // 快斩：触发乱舞（已解锁时）
+        quick_slash: {
+            rate: 1.0,
+            skills: ['combo_follow_ranwu']
+        },
+        // 连斩及变体：无追加（或后续扩展）
+        // 终结技：触发残心
+        finisher: {
+            rate: 1.0,
+            skills: ['combo_follow_zanxin']
+        },
+        // 见切：追击通过 takeDamage 内联处理，不走 FollowUpTriggers
     },
     mana: {
         shoot:         { rate: 0.35, skills: ['mana_follow_aftershock'], condition: (player) => player._lastSkillWasEnhanced },

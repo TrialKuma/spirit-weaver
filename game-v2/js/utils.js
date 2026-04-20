@@ -544,45 +544,70 @@ class CTBSystem {
         GameState.isPaused = false;
     }
 
+    // 模拟未来 count 次行动，返回有序队列
+    previewQueue(count = 9) {
+        if (this.units.length === 0) return [];
+
+        const snapshot = this.units.map(u => ({ unit: u, av: u.av }));
+        const queue = [];
+        let cumTicks = 0;
+
+        for (let i = 0; i < count; i++) {
+            let minAv = Infinity, minIdx = -1;
+            snapshot.forEach((s, idx) => {
+                if (s.av < minAv) { minAv = s.av; minIdx = idx; }
+            });
+            if (minIdx < 0) break;
+
+            cumTicks += minAv;
+            snapshot.forEach(s => { s.av -= minAv; });
+
+            queue.push({
+                unit: snapshot[minIdx].unit,
+                cumTicks: Math.round(cumTicks)
+            });
+
+            snapshot[minIdx].av = 10000 / snapshot[minIdx].unit.speed;
+        }
+
+        return queue;
+    }
+
     render() {
         const timeline = document.getElementById('timeline');
         if (!timeline) return;
 
-        if (!this._elMap) this._elMap = new Map();
-        const seen = new Set();
+        const queue = this.previewQueue(9);
 
-        this.units.forEach(unit => {
-            seen.add(unit);
-            let unitEl = this._elMap.get(unit);
+        const spirit = GameState.spirit;
+        const hasCompanion = spirit && spirit.spiritType === 'cooperative';
+        const companionIcon = hasCompanion ? (spirit.icon || '灵') : '';
 
-            if (!unitEl) {
-                unitEl = document.createElement('div');
-                unitEl.className = `timeline-unit ${unit.type}`;
-                if (unit.type === 'spirit' && unit.spiritType) {
-                    unitEl.classList.add(unit.spiritType);
-                }
-                // 显示名字首字作为圆形图标
-                const label = unit.type === 'player' ? '我'
-                    : unit.type === 'spirit' ? '灵'
-                    : (unit.name ? unit.name.charAt(0) : '敌');
-                unitEl.textContent = label;
-                unitEl.title = unit.name; // 悬停显示全名
-                timeline.appendChild(unitEl);
-                this._elMap.set(unit, unitEl);
-            }
+        let html = '';
+        queue.forEach((item, index) => {
+            const { unit, cumTicks } = item;
+            const isNext = index === 0;
+            const typeClass = unit.type;
+            const spiritSubClass = (unit.type === 'spirit' && unit.spiritType) ? ` ${unit.spiritType}` : '';
+            const nextClass = isNext ? ' tq-next' : '';
 
-            const progress = 1 - (unit.av / (10000 / unit.speed));
-            // 限制在 4%~96% 范围内避免溢出圆角
-            const clampedLeft = Math.max(4, Math.min(96, progress * 100));
-            unitEl.style.left = `${clampedLeft}%`;
+            const label = unit.type === 'player' ? '我'
+                : unit.type === 'spirit' ? '灵'
+                : (unit.name ? unit.name.charAt(0) : '敌');
+
+            const avDisplay = (isNext && cumTicks <= 1) ? '▸' : cumTicks;
+
+            const companion = (hasCompanion && unit.type === 'player')
+                ? `<div class="tq-companion" title="${spirit.name || '协力魂灵'}">${companionIcon}</div>`
+                : '';
+
+            html += `<div class="tq-slot ${typeClass}${spiritSubClass}${nextClass}" title="${unit.name || unit.type}">` +
+                `<div class="tq-av">${avDisplay}</div>` +
+                `<div class="tq-icon">${label}</div>` +
+                companion +
+                `</div>`;
         });
 
-        // 移除已不在时间轴上的单位
-        for (const [unit, el] of this._elMap) {
-            if (!seen.has(unit)) {
-                el.remove();
-                this._elMap.delete(unit);
-            }
-        }
+        timeline.innerHTML = html;
     }
 }

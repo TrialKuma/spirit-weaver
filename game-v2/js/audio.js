@@ -2,6 +2,8 @@
 const AudioManager = {
     _bgmSource: null,
     _bgmGain: null,
+    _bgmAudioEl: null,
+    _htmlAudioCache: {},
     _bufferCache: {},
     _currentTrackKey: null,
     _trackMap: {
@@ -17,6 +19,9 @@ const AudioManager = {
         }
         if (typeof SFX !== 'undefined' && typeof SFX._ensureCtx === 'function') {
             SFX._ensureCtx();
+        }
+        if (this._bgmAudioEl) {
+            this._bgmAudioEl.muted = false;
         }
     },
 
@@ -83,6 +88,16 @@ const AudioManager = {
         return audioBuffer;
     },
 
+    _getHtmlAudio(url) {
+        if (this._htmlAudioCache[url]) return this._htmlAudioCache[url];
+        const audio = new Audio(url);
+        audio.preload = 'auto';
+        audio.loop = true;
+        audio.volume = 0.48;
+        this._htmlAudioCache[url] = audio;
+        return audio;
+    },
+
     async playBattleBgm(classId, nodeType = 'battle') {
         if (!classId) return;
         if (typeof GameState !== 'undefined' && GameState.audio && GameState.audio.bgmEnabled === false) return;
@@ -91,38 +106,53 @@ const AudioManager = {
         const trackKey = `${resolvedClassId}:battle`;
         if (this._currentTrackKey === trackKey) return;
 
-        const ctx = this._getCtx();
-        if (!ctx) return;
-
         try {
             const url = this._trackMap[resolvedClassId];
-            const buffer = await this._loadBuffer(url);
-            if (!buffer) return;
-
             this.stopBgm();
+            const audio = this._getHtmlAudio(url);
+            audio.currentTime = 0;
+            await audio.play();
 
-            const source = ctx.createBufferSource();
-            source.buffer = buffer;
-            source.loop = true;
-
-            const gain = this._ensureBgmGain(ctx);
-            source.connect(gain);
-            source.start(0);
-
-            this._bgmSource = source;
+            this._bgmAudioEl = audio;
             this._currentTrackKey = trackKey;
 
             if (typeof GameState !== 'undefined' && GameState.audio) {
                 GameState.audio.currentTrack = trackKey;
             }
         } catch (err) {
-            if (typeof Logger !== 'undefined') {
-                Logger.log(`BGM 加载失败：${err.message}`, true);
+            try {
+                const ctx = this._getCtx();
+                const url = this._trackMap[resolvedClassId];
+                const buffer = ctx ? await this._loadBuffer(url) : null;
+                if (!ctx || !buffer) throw err;
+
+                const source = ctx.createBufferSource();
+                source.buffer = buffer;
+                source.loop = true;
+
+                const gain = this._ensureBgmGain(ctx);
+                source.connect(gain);
+                source.start(0);
+
+                this._bgmSource = source;
+                this._currentTrackKey = trackKey;
+                if (typeof GameState !== 'undefined' && GameState.audio) {
+                    GameState.audio.currentTrack = trackKey;
+                }
+            } catch (fallbackErr) {
+                if (typeof Logger !== 'undefined') {
+                    Logger.log(`BGM 播放失败：${fallbackErr.message}`, true);
+                }
             }
         }
     },
 
     stopBgm() {
+        if (this._bgmAudioEl) {
+            this._bgmAudioEl.pause();
+            this._bgmAudioEl.currentTime = 0;
+            this._bgmAudioEl = null;
+        }
         if (this._bgmSource) {
             try {
                 this._bgmSource.stop(0);

@@ -91,10 +91,12 @@ function createSkill(config = {}) {
         const morph = hammerConfig.morph;
         if (morph.name) skill.name = morph.name;
         if (morph.desc) skill.desc = morph.desc;
+        if (morph.type !== undefined) skill.type = morph.type;
         if (morph.baseMultiplier !== undefined) skill.baseMultiplier = morph.baseMultiplier;
         if (morph.hits !== undefined) skill.hits = morph.hits;
         if (morph.cost !== undefined) skill.cost = { ...skill.cost, ...morph.cost };
-        if (morph.tags) skill.tags = [...new Set([...skill.tags, ...morph.tags])];
+        if (morph.replaceTags) skill.tags = [...morph.replaceTags];
+        else if (morph.tags) skill.tags = [...new Set([...skill.tags, ...morph.tags])];
         if (morph.onHit) skill.onHit = morph.onHit;
         if (morph.extra) Object.assign(skill, morph.extra);
     };
@@ -105,200 +107,302 @@ function createSkill(config = {}) {
 // 锤子配置表（按职业 → 技能 → 锤子列表）
 const HammerConfig = {
     qi: {
-        light_strike: [
+        // 轻拳变体（替换型二选一，另有追加连拳通过升级解锁）
+        light_punch: [
             {
-                id: 'qi_hammer_chain_fist',
-                name: '连环拳',
+                id: 'qi_hammer_heavy_fist',
+                name: '重拳',
                 icon: '👊',
-                desc: '轻击变3段（每段40%），每段叠1层内伤',
-                targetSkill: 'light_strike',
+                desc: '轻拳升级为重拳，倍率提升至150%',
+                targetSkill: 'light_punch',
                 morph: {
-                    name: '连环拳',
-                    desc: '3段攻击（每段40%攻击力），每段命中叠1层内伤',
-                    baseMultiplier: 0.4,
-                    hits: 3,
-                    extra: { stacksInjuryPerHit: 1 }
+                    name: '重拳',
+                    desc: '造成150%攻击力伤害',
+                    baseMultiplier: 1.5
                 }
             },
             {
                 id: 'qi_hammer_qi_palm',
-                name: '回气掌',
+                name: '集气掌',
                 icon: '🌀',
-                desc: '轻击命中后回复1气',
-                targetSkill: 'light_strike',
+                desc: '轻拳命中后额外回复1气',
+                targetSkill: 'light_punch',
                 morph: {
-                    name: '回气掌',
+                    name: '集气掌',
                     desc: '造成100%攻击力伤害，命中后回复1气',
-                    extra: { qiRecoveryOnHit: 1 }
+                    extra: { qiOnHit: 1 }
                 }
             }
         ],
+        // 迅击变体（替换型三选一，无追加）
         rapid_strike: [
             {
-                id: 'qi_hammer_wound_strike',
-                name: '裂伤击',
-                icon: '🩸',
-                desc: '迅击额外叠2层内伤，内伤目标额外+50%伤害',
+                id: 'qi_hammer_tieshan',
+                name: '铁山靠',
+                icon: '⛰️',
+                desc: '替换迅击：消耗4气，280%单发重击',
                 targetSkill: 'rapid_strike',
                 morph: {
-                    name: '裂伤击',
-                    desc: '消耗2气，造成200%攻击力伤害。额外叠2层内伤，内伤目标+50%伤害',
-                    extra: { stacksInjury: 2, injuryBonusMult: 1.5 }
+                    name: '铁山靠',
+                    desc: '造成280%攻击力伤害（重型单发）',
+                    baseMultiplier: 2.8,
+                    cost: { qi: 4 },
+                    replaceTags: ['Heavy', 'Melee', 'Special']
                 }
             },
             {
-                id: 'qi_hammer_twin_rapid',
-                name: '双迅',
+                id: 'qi_hammer_flash',
+                name: '闪击',
                 icon: '⚡',
-                desc: '迅击变为打2次（每次150%），消耗3气',
+                desc: '替换迅击：2气，200%，命中后可衔接所有已有追加技能',
                 targetSkill: 'rapid_strike',
                 morph: {
-                    name: '双迅',
-                    desc: '消耗3气，打2次（每次150%攻击力伤害）',
-                    baseMultiplier: 1.5,
-                    hits: 2,
-                    cost: { qi: 3 }
+                    name: '闪击',
+                    desc: '造成200%攻击力伤害。命中后可衔接所有已解锁的追加技能',
+                    extra: { isFlash: true }
                 }
             },
             {
-                id: 'qi_hammer_swift_shadow',
-                name: '迅影',
-                icon: '💨',
-                desc: '迅击消耗改为0气，倍率降到100%，推进自身行动条20%',
+                id: 'qi_hammer_rapid3',
+                name: '迅连击',
+                icon: '🌀',
+                desc: '替换迅击：消耗4气，150%×3段，各自扣防',
                 targetSkill: 'rapid_strike',
                 morph: {
-                    name: '迅影',
-                    desc: '不消耗气，造成100%攻击力伤害，推进自身行动条20%',
-                    baseMultiplier: 1.0,
-                    cost: { qi: 0 },
-                    extra: { avAdvance: 0.2 }
+                    name: '迅连击',
+                    desc: '3段×150%，各段独立扣防',
+                    baseMultiplier: 1.5,
+                    hits: 3,
+                    cost: { qi: 4 }
                 }
             }
         ],
+        // 崩山变体（替换型二选一，另有追加震破通过升级解锁）
         devastate: [
             {
-                id: 'qi_hammer_injury_detonate',
-                name: '内伤引爆',
-                icon: '💥',
-                desc: '崩山引爆目标所有内伤层，每层+60%基础攻击力额外伤害',
-                targetSkill: 'devastate',
-                morph: {
-                    name: '引爆·崩山',
-                    desc: '消耗6气，造成350%攻击力伤害。引爆目标所有内伤层，每层+60%攻额外伤害',
-                    baseMultiplier: 3.5,
-                    cost: { qi: 6 },
-                    extra: { detonateInjury: true, detonateMultPerStack: 0.6 }
-                }
-            },
-            {
-                id: 'qi_hammer_charged_devastate',
-                name: '蓄力崩山',
+                id: 'qi_hammer_devastate_ex',
+                name: '崩山·极',
                 icon: '🔥',
-                desc: '崩山可消耗所有气（≥6），每多1气+50%倍率，满气=850%',
+                desc: '替换崩山：消耗8气起，倾泻所有剩余气息（每气+100%），满10气=750%',
                 targetSkill: 'devastate',
                 morph: {
-                    name: '蓄力·崩山',
-                    desc: '消耗所有气（至少6），基础350%，每多1气+50%倍率。满气=850%',
-                    baseMultiplier: 3.5,
-                    cost: { qi: 6 },
-                    extra: { consumeAllQi: true, extraQiMultPerPoint: 0.5 }
+                    name: '崩山·极',
+                    desc: '550%基础+每多1气追加100%（满10气=750%）',
+                    baseMultiplier: 5.5,
+                    cost: { qi: 8 },
+                    extra: { consumeAllQi: true, extraQiMultPerPoint: 1.0 }
                 }
             },
             {
-                id: 'qi_hammer_mountain_chain',
-                name: '碎山连',
-                icon: '⛰️',
-                desc: '崩山消耗降到4气，倍率降到200%，可连续使用',
+                id: 'qi_hammer_fist_dance',
+                name: '拳舞',
+                icon: '🌪️',
+                desc: '替换崩山：消耗6气，150%×4段，各自扣防，总600%',
                 targetSkill: 'devastate',
                 morph: {
-                    name: '碎山连',
-                    desc: '消耗4气，造成200%攻击力伤害。低消耗快速循环',
+                    name: '拳舞',
+                    desc: '4段×150%，各段独立扣防，总600%',
+                    baseMultiplier: 1.5,
+                    hits: 4,
+                    cost: { qi: 6 }
+                }
+            }
+        ],
+        // 架势变体（替换型二选一，另有追加回击通过升级解锁）
+        stance: [
+            {
+                id: 'qi_hammer_qi_fist',
+                name: '气合拳',
+                icon: '🛡️',
+                desc: '替换架势：消耗2气，150%伤害，等量转化为自身护盾',
+                targetSkill: 'stance',
+                morph: {
+                    name: '气合拳',
+                    desc: '造成150%攻击力伤害，同时获得等量护盾',
+                    type: 'special',
+                    baseMultiplier: 1.5,
+                    cost: { qi: 2 },
+                    replaceTags: ['Special', 'Melee'],
+                    extra: { effect: null, damageToShield: true }
+                }
+            },
+            {
+                id: 'qi_hammer_dragon',
+                name: '龙腾',
+                icon: '🐉',
+                desc: '替换架势：消耗4气，200%伤害，附加晕眩1回合',
+                targetSkill: 'stance',
+                morph: {
+                    name: '龙腾',
+                    desc: '造成200%攻击力伤害，目标晕眩1回合',
+                    type: 'special',
                     baseMultiplier: 2.0,
-                    cost: { qi: 4 }
+                    cost: { qi: 4 },
+                    replaceTags: ['Special', 'Melee', 'Heavy'],
+                    extra: { effect: null, applyStun: 1 }
                 }
             }
         ]
     },
     combo: {
-        quick_strike: [
+        // 快斩变体（替换二选一，+追加乱舞链通过升级解锁）
+        quick_slash: [
             {
-                id: 'combo_hammer_tempest',
-                name: '风暴斩',
-                icon: '🌪️',
-                desc: '疾风变3段（每段30%），每段叠1层疾风',
-                targetSkill: 'quick_strike',
+                id: 'combo_hammer_triple_slash',
+                name: '双刃斩',
+                icon: '⚔️',
+                desc: '替换快斩：3段×70%，每段+1连击，共+3连击，攒连击神器',
+                targetSkill: 'quick_slash',
                 morph: {
-                    name: '风暴斩',
-                    desc: '3段攻击（每段30%），每段叠1层疾风',
-                    baseMultiplier: 0.3,
-                    hits: 3,
-                    extra: { galePerHit: 1 }
+                    name: '双刃斩',
+                    desc: '3段攻击（每段70%），每段命中+1连击（共+3）',
+                    baseMultiplier: 0.7,
+                    hits: 3
                 }
             },
             {
-                id: 'combo_hammer_gale_burst',
-                name: '疾风爆',
-                icon: '💫',
-                desc: '疾风变单段（120%），消耗全部疾风层，每层+15%伤害',
-                targetSkill: 'quick_strike',
+                id: 'combo_hammer_armor_break',
+                name: '破防斩',
+                icon: '🔨',
+                desc: '替换快斩：120%单段，降目标DEF 2点（2回合），+1连击',
+                targetSkill: 'quick_slash',
                 morph: {
-                    name: '疾风爆',
-                    desc: '单段120%伤害，消耗全部疾风层，每层+15%伤害',
+                    name: '破防斩',
+                    desc: '造成120%攻击力伤害，降低目标防御2点（2回合），+1连击',
                     baseMultiplier: 1.2,
                     hits: 1,
-                    extra: { consumeGale: true, galeMultPerStack: 0.15 }
+                    onHit: (user, target) => {
+                        if (target) {
+                            target.addBuff({ name: '破防', type: 'debuff', stat: 'def', value: -2, duration: 2, desc: 'DEF-2（2回合）' });
+                            Logger.log('破防斩！目标DEF-2（2回合）', true);
+                        }
+                    }
                 }
             }
         ],
-        combo_strike: [
+        // 连斩变体（替换三选一，无追加）
+        chain_slash: [
             {
-                id: 'combo_hammer_blood_chain',
-                name: '嗜血连斩',
-                icon: '🩸',
-                desc: '连斩每多打一段，下一段倍率+20%（递增）',
-                targetSkill: 'combo_strike',
+                id: 'combo_hammer_dash_slash',
+                name: '疾步斩',
+                icon: '💨',
+                desc: '替换连斩：消耗2连击，100%×2段，命中后推进自身行动条20%，每段+1连击',
+                targetSkill: 'chain_slash',
                 morph: {
-                    name: '嗜血连斩',
-                    desc: '50%×N，每多一段+20%倍率递增（50→70→90...）',
-                    extra: { escalatingDamage: true, escalateBonus: 0.2 }
+                    name: '疾步斩',
+                    desc: '2段×100%，每段+1连击，命中后推进行动条20%',
+                    baseMultiplier: 1.0,
+                    hits: 2,
+                    cost: { combo: 2 },
+                    onHit: (user, target) => {
+                        if (typeof advanceUnitAV === 'function' && typeof GameState !== 'undefined' && GameState.player) {
+                            advanceUnitAV(GameState.player, 0.2);
+                            Logger.log('疾步斩：推进行动条20%', true);
+                        }
+                    }
                 }
             },
             {
-                id: 'combo_hammer_endless',
-                name: '无尽连斩',
-                icon: '♾️',
-                desc: '连斩取消5次上限，追加概率改为50%但每次递减5%',
-                targetSkill: 'combo_strike',
+                id: 'combo_hammer_whirl_blade',
+                name: '旋刃',
+                icon: '🌀',
+                desc: '替换连斩：消耗4连击，80%×2段（全体），每段+1连击，净-2',
+                targetSkill: 'chain_slash',
                 morph: {
-                    name: '无尽连斩',
-                    desc: '无上限追加！初始50%概率，每次递减5%（50→45→40...）',
-                    extra: { endlessChain: true, baseChance: 0.5, decayPerHit: 0.05 }
+                    name: '旋刃',
+                    desc: '2段×80%覆盖全体，每段+1连击',
+                    baseMultiplier: 0.8,
+                    hits: 2,
+                    cost: { combo: 4 }
+                }
+            },
+            {
+                id: 'combo_hammer_frenzy',
+                name: '乱击',
+                icon: '⚡',
+                desc: '替换连斩：消耗3连击，70%×5段，每段+1连击，净+2',
+                targetSkill: 'chain_slash',
+                morph: {
+                    name: '乱击',
+                    desc: '5段×70%，每段+1连击（净+2）',
+                    baseMultiplier: 0.7,
+                    hits: 5,
+                    cost: { combo: 3 }
                 }
             }
         ],
+        // 终结技变体（替换二选一，+追加残心通过升级解锁）
         finisher: [
             {
-                id: 'combo_hammer_flash',
+                id: 'combo_hammer_hundred_slash',
+                name: '百裂终结',
+                icon: '🔥',
+                desc: '替换终结技：消耗8连击，100%×4段，各自扣防，每段+1连击（净-4）',
+                targetSkill: 'finisher',
+                morph: {
+                    name: '百裂终结',
+                    desc: '4段×100%，各段独立扣防，每段+1连击（净-4）',
+                    baseMultiplier: 1.0,
+                    hits: 4,
+                    cost: { combo: 8 },
+                    extra: { pureHitsFinisher: true, noComboGain: false }
+                }
+            },
+            {
+                id: 'combo_hammer_issan',
                 name: '一闪',
-                icon: '⚔️',
-                desc: '消耗10连击时变为"一闪"：无视防御+50%暴击(x2.5)',
+                icon: '⚡',
+                desc: '替换终结技：消耗10连击，700%单发，全梭哈换最高单发',
                 targetSkill: 'finisher',
                 morph: {
                     name: '一闪',
-                    desc: '消耗10连击，无视防御+50%暴击(x2.5倍)。攒满才能一击必杀',
-                    extra: { flashStrike: true, flashCritChance: 0.5, flashCritMult: 2.5 }
+                    desc: '700%单发伤害，满连击才能释放',
+                    baseMultiplier: 7.0,
+                    hits: 1,
+                    cost: { combo: 10 },
+                    extra: { issanEffect: true, noComboGain: true }
+                }
+            }
+        ],
+        // 见切变体（替换二选一，+追加追击通过升级解锁）
+        kiri: [
+            {
+                id: 'combo_hammer_flow_water',
+                name: '流水',
+                icon: '💧',
+                desc: '替换见切：消耗2连击，80%攻击+攻击力80%护盾，+1连击',
+                targetSkill: 'kiri',
+                morph: {
+                    name: '流水',
+                    desc: '闪避+80%反击，命中后获得攻击力80%的护盾，+1连击',
+                    type: 'special',
+                    baseMultiplier: 0.8,
+                    hits: 1,
+                    cost: { combo: 2 },
+                    replaceTags: ['Special', 'Melee'],
+                    onHit: (user, target) => {
+                        const shieldVal = Math.floor(user.getBuffedAtk() * 0.8);
+                        user.shield += shieldVal;
+                        Logger.log(`流水：获得护盾 +${shieldVal}`, true);
+                        if (typeof updateBuffBars === 'function') updateBuffBars();
+                    },
+                    extra: { effect: null, noComboGain: false }
                 }
             },
             {
-                id: 'combo_hammer_aftermath',
-                name: '终结余波',
-                icon: '💫',
-                desc: '终结技击杀后保留50%连击点（向下取整）',
-                targetSkill: 'finisher',
+                id: 'combo_hammer_afterimage',
+                name: '残像',
+                icon: '👤',
+                desc: '替换见切：0连击，不反击。获得【残像】ATK+30%（2回合）',
+                targetSkill: 'kiri',
                 morph: {
-                    name: '余波·终结技',
-                    desc: '消耗6连击造成缩放伤害。击杀后保留50%连击点',
-                    extra: { retainComboOnKill: true, retainRatio: 0.5 }
+                    name: '残像',
+                    desc: '不反击。闪避后获得【残像】ATK+30%（2回合）',
+                    type: 'defense',
+                    baseMultiplier: 0,
+                    hits: 0,
+                    cost: { combo: 0 },
+                    extra: { effect: 'kiri', afterimageEffect: true, noComboGain: true }
                 }
             }
         ]
@@ -313,7 +417,7 @@ const HammerConfig = {
                 targetSkill: 'shoot',
                 morph: {
                     name: '散射',
-                    desc: '消耗2弹药，3段攻击（每段130%攻击力）',
+                    desc: '3段×130%（消耗2弹药）',
                     extra: { scatterShot: true, scatterHits: 3, scatterMult: 1.3, scatterAmmoCost: 2 }
                 }
             },
@@ -325,7 +429,7 @@ const HammerConfig = {
                 targetSkill: 'shoot',
                 morph: {
                     name: '蓄力射击',
-                    desc: '消耗2弹药，造成500%攻击力伤害（单发高伤）',
+                    desc: '造成500%攻击力伤害（消耗2弹药）',
                     extra: { chargeShot: true, chargeMult: 5.0, chargeAmmoCost: 2 }
                 }
             },
@@ -337,7 +441,7 @@ const HammerConfig = {
                 targetSkill: 'shoot',
                 morph: {
                     name: '连射',
-                    desc: '消耗1弹药，360%伤害。30%概率免费再射（最多连射2次）',
+                    desc: '360%伤害。30%概率免费再射（最多连射2次）',
                     extra: { rapidFire: true, rapidChance: 0.3, rapidMaxExtra: 2 }
                 }
             }
@@ -377,7 +481,7 @@ const HammerConfig = {
                 targetSkill: 'reload',
                 morph: {
                     name: '超载装填',
-                    desc: '消耗6魔力装填。魔力≥8时额外+2弹药（共5发）',
+                    desc: '魔力≥8时额外+2弹药（共5发）',
                     extra: { superchargeReload: true, superchargeThreshold: 8, superchargeExtraAmmo: 2 }
                 }
             },
@@ -389,7 +493,7 @@ const HammerConfig = {
                 targetSkill: 'reload',
                 morph: {
                     name: '快速装填',
-                    desc: '消耗3魔力，装填2发弹药，推进行动条20%',
+                    desc: '装填2发弹药，推进行动条20%',
                     extra: { quickReload: true, quickManaCost: 3, quickAmmoGain: 2, quickAvAdvance: 0.2 }
                 }
             }
@@ -434,7 +538,7 @@ const HammerConfig = {
                 targetSkill: 'yin_strike',
                 morph: {
                     name: '深蚀击',
-                    desc: '100%伤害，平衡-3。施加深度侵蚀（ATK×40%/回合，2回合）',
+                    desc: '100%伤害，平衡-3。施加深度侵蚀（攻击力40%/回合，2回合）',
                     extra: { deepErosion: true, erosionMult: 0.4, erosionDuration: 2 }
                 }
             },
@@ -510,7 +614,7 @@ function applyHammerToPlayer(hammerConfig) {
     if (!GameState.hammers) GameState.hammers = {};
     GameState.hammers[hammerConfig.targetSkill] = hammerConfig;
     GameState.hammersChosen = (GameState.hammersChosen || 0) + 1;
-    Logger.log(`获得锤子：${hammerConfig.name}（${skill.name}）`, true);
+    Logger.log(`魂印铭刻：${hammerConfig.name}（${skill.name}）`, true);
 
     if (typeof GameState.player.updateSkills === 'function') {
         GameState.player.updateSkills();

@@ -38,11 +38,38 @@ function selectSpirit(spiritId) {
 
 // ==================== 魂灵祭坛（战前选择场景） ====================
 
+function removeSpiritShrineGmStrip(overlay) {
+    if (!overlay) return;
+    const strip = overlay.querySelector('.spirit-gm-strip');
+    if (strip) strip.remove();
+}
+
+function finishSpiritShrineSelection(overlay, optionsEl, shrineParticles, spirit, onChosen) {
+    setTimeout(() => {
+        overlay.classList.add('shrine-exit');
+        setTimeout(() => {
+            overlay.classList.add('hidden');
+            overlay.classList.remove('shrine-mode', 'shrine-exit');
+            if (shrineParticles) shrineParticles.innerHTML = '';
+            optionsEl.querySelectorAll('.spirit-choice-card').forEach(c => {
+                c.classList.remove('spirit-chosen', 'spirit-dismissed');
+            });
+            removeSpiritShrineGmStrip(overlay);
+            selectSpirit(spirit.id);
+            if (typeof onChosen === 'function') {
+                onChosen(spirit);
+            }
+        }, 500);
+    }, 800);
+}
+
 function showSpiritShrine(onChosen) {
     const overlay = document.getElementById('spirit-select-overlay');
     const optionsEl = document.getElementById('spirit-choice-options');
     const titleEl = document.getElementById('spirit-select-title');
     if (!overlay || !optionsEl) return;
+
+    removeSpiritShrineGmStrip(overlay);
 
     if (typeof AudioManager !== 'undefined') {
         AudioManager.playUi('open');
@@ -152,7 +179,6 @@ function showSpiritShrine(onChosen) {
         }
 
         card.addEventListener('click', () => {
-            // 契约动画：选中的卡片高亮脉冲，其他消散
             const allCards = optionsEl.querySelectorAll('.spirit-choice-card');
             allCards.forEach(c => {
                 if (c === card) {
@@ -161,27 +187,95 @@ function showSpiritShrine(onChosen) {
                     c.classList.add('spirit-dismissed');
                 }
             });
-
-            // 选中后延迟关闭，播放契约效果
-            setTimeout(() => {
-                overlay.classList.add('shrine-exit');
-                setTimeout(() => {
-                    overlay.classList.add('hidden');
-                    overlay.classList.remove('shrine-mode', 'shrine-exit');
-                    // 清理粒子
-                    if (shrineParticles) shrineParticles.innerHTML = '';
-                    // 移除卡片动画class
-                    allCards.forEach(c => c.classList.remove('spirit-chosen', 'spirit-dismissed'));
-
-                    selectSpirit(spirit.id);
-                    if (typeof onChosen === 'function') {
-                        onChosen(spirit);
-                    }
-                }, 500);
-            }, 800);
+            finishSpiritShrineSelection(overlay, optionsEl, shrineParticles, spirit, onChosen);
         });
         optionsEl.appendChild(card);
     });
+
+    const hintEl = panelEl ? panelEl.querySelector('.spirit-select-hint') : null;
+    if (
+        panelEl &&
+        hintEl &&
+        typeof isDebugModeEnabled === 'function' &&
+        isDebugModeEnabled() &&
+        typeof getAllSpiritCatalogEntries === 'function'
+    ) {
+        const typeNameMapGm = {
+            autonomous: '自律',
+            cooperative: '协力',
+            assistant: '助理'
+        };
+        const strip = document.createElement('div');
+        strip.className = 'spirit-gm-strip';
+
+        const toggleRow = document.createElement('div');
+        toggleRow.className = 'spirit-gm-toggle-row';
+
+        const hintLabel = document.createElement('div');
+        hintLabel.className = 'spirit-gm-toggle';
+        hintLabel.textContent = 'GM · 全魂灵图鉴（9） · 下方区域可滚轮浏览';
+
+        const body = document.createElement('div');
+        body.className = 'spirit-gm-body';
+
+        const catOrder = ['autonomous', 'cooperative', 'assistant'];
+        const allEntries = getAllSpiritCatalogEntries();
+        catOrder.forEach(cat => {
+            const group = allEntries.filter(s => s.spiritType === cat);
+            if (group.length === 0) return;
+
+            const sec = document.createElement('div');
+            sec.className = 'spirit-gm-section';
+
+            const secTitle = document.createElement('div');
+            secTitle.className = 'spirit-gm-section-title';
+            secTitle.textContent = typeNameMapGm[cat] || cat;
+            sec.appendChild(secTitle);
+
+            const grid = document.createElement('div');
+            grid.className = 'spirit-gm-grid';
+
+            group.forEach(spiritDef => {
+                const tile = document.createElement('button');
+                tile.type = 'button';
+                tile.className = `spirit-gm-tile ${spiritDef.spiritType || ''}`;
+
+                const iconSpan = document.createElement('span');
+                iconSpan.className = 'spirit-gm-tile-icon';
+                iconSpan.textContent = spiritDef.icon || '✦';
+                tile.appendChild(iconSpan);
+
+                const nameSpan = document.createElement('span');
+                nameSpan.className = 'spirit-gm-tile-name';
+                nameSpan.textContent = spiritDef.name;
+                tile.appendChild(nameSpan);
+
+                const descSpan = document.createElement('span');
+                descSpan.className = 'spirit-gm-tile-desc';
+                descSpan.textContent = spiritDef.desc || '（无描述）';
+                tile.appendChild(descSpan);
+
+                if (typeof AudioManager !== 'undefined') {
+                    AudioManager.bindUiSound(tile, { hover: 'hover', click: 'confirm' });
+                }
+                tile.addEventListener('click', () => {
+                    optionsEl.querySelectorAll('.spirit-choice-card').forEach(c => c.classList.add('spirit-dismissed'));
+                    strip.querySelectorAll('.spirit-gm-tile').forEach(t => t.classList.remove('spirit-gm-tile-chosen'));
+                    tile.classList.add('spirit-gm-tile-chosen');
+                    finishSpiritShrineSelection(overlay, optionsEl, shrineParticles, spiritDef, onChosen);
+                });
+                grid.appendChild(tile);
+            });
+
+            sec.appendChild(grid);
+            body.appendChild(sec);
+        });
+
+        toggleRow.appendChild(hintLabel);
+        strip.appendChild(toggleRow);
+        strip.appendChild(body);
+        panelEl.insertBefore(strip, hintEl.nextSibling);
+    }
 
     overlay.classList.remove('hidden');
 }
@@ -279,27 +373,21 @@ function initGame() {
     GameState.hammers = {};
     GameState.hammersChosen = 0;
     GameState.hammersPending = null;
+    if (typeof resetSkillDamageStats === 'function') {
+        resetSkillDamageStats();
+    }
 
-    // 使用 RunManager 生成流程
+    // 使用 RunManager 生成分支地图
     RunManager.generateRun();
     GameState.currentLevel = 1;
-    GameState.maxLevels = RunManager.nodes.length;
+    GameState.maxLevels = RunManager.acts.reduce((s, a) => s + a.layers.length, 0);
     
     document.getElementById('turn-count').textContent = 0;
     document.getElementById('log-panel').innerHTML = '<div class="log-entry">战斗开始...</div>';
 
-    // 根据 RunManager 创建敌人
-    const scaling = RunManager.getEnemyScaling();
-    GameState.enemy = createTestEnemy();
-    GameState.enemy.maxHp = Math.floor(GameState.enemy.maxHp * scaling.hpMult);
-    GameState.enemy.hp = GameState.enemy.maxHp;
-    GameState.enemy.baseAtk = Math.floor(GameState.enemy.baseAtk * scaling.atkMult);
-
-    ctbSystem.units = []; // 清空之前的单位
+    // 使用默认角色
+    ctbSystem.units = [];
     if (ctbSystem._elMap) { ctbSystem._elMap.clear(); }
-    ctbSystem.addUnit(GameState.enemy);
-    
-    // 使用默认角色进入战斗
     selectClass(GameState.selectedClass || 'qi');
 
     // 魂灵已在战前选择，将自律型魂灵加入时间轴
@@ -308,27 +396,25 @@ function initGame() {
             ctbSystem.addUnit(GameState.spirit);
         }
     }
-    
+
     initBattleBgOrbs();
 
     Logger.log('游戏初始化完成');
     if (typeof isDebugModeEnabled === 'function' && isDebugModeEnabled()) {
         Logger.log('DEBUG 模式已开启（资源无限）', true);
     }
-    Logger.log(`关卡 ${GameState.currentLevel}/${GameState.maxLevels}`);
     if (GameState.spirit) {
         Logger.log(`契约魂灵: ${GameState.spirit.name}`);
     }
+
     if (!loopStarted) {
         loopStarted = true;
         gameLoop();
     }
 
-    if (typeof AudioManager !== 'undefined') {
-        const currentNode = (typeof RunManager !== 'undefined') ? RunManager.getCurrentNode() : null;
-        AudioManager.playBattleBgm(GameState.selectedClass || 'qi', currentNode ? currentNode.type : 'battle');
-    }
-    updateUI();
+    // 进入第 1 幕：先启动入口节点，再显示地图让玩家选路
+    RunManager.startAct();
+    enterCurrentNode();
 }
 
 
@@ -354,7 +440,10 @@ function restartGame() {
     GameState.hammers = {};
     GameState.hammersChosen = 0;
     GameState.hammersPending = null;
-    
+    if (typeof resetSkillDamageStats === 'function') {
+        resetSkillDamageStats();
+    }
+
     // 重置 CTB 速度
     lastActingSide = null;
     ctbSystem.tickSpeed = CTB_NORMAL_SPEED;
@@ -377,6 +466,9 @@ function restartGame() {
         overlay.classList.add('hidden');
         overlay.classList.remove('shrine-mode', 'shrine-exit');
     }
+    // 隐藏地图
+    if (typeof hideMapOverlay === 'function') hideMapOverlay();
+
     const selectionScreen = document.getElementById('selection-screen');
     const container = document.querySelector('.container');
     if (selectionScreen) selectionScreen.classList.remove('hidden');
@@ -397,12 +489,13 @@ function gameOver() {
     const overlay = document.createElement('div');
     overlay.className = 'gameover-overlay';
     overlay.id = 'gameover-overlay';
-    const nodeProgress = (typeof RunManager !== 'undefined') ? RunManager.getProgressText() : `${GameState.currentLevel}`;
+    const actText = (typeof RunManager !== 'undefined') ? RunManager.getActText() : '';
+    const nodeLabel = (typeof RunManager !== 'undefined') ? RunManager.getNodeLabel() : '';
     overlay.innerHTML = `
         <div class="gameover-panel">
             <div class="gameover-title">战斗失败</div>
             <div class="gameover-stats">
-                <div>推进到节点 ${nodeProgress}</div>
+                <div>倒在了 ${actText} ${nodeLabel}</div>
                 <div>坚持了 ${GameState.turnCount} 个回合</div>
                 <div>获得了 ${GameState.upgradesChosen} 个强化</div>
             </div>
@@ -415,6 +508,7 @@ function gameOver() {
     if (restartBtn && typeof AudioManager !== 'undefined') {
         AudioManager.bindUiSound(restartBtn, { hover: 'hover', click: 'confirm' });
     }
+    updateUI();
 }
 
 // ==================== 职业图标/颜色映射 ====================
@@ -786,15 +880,6 @@ function enemyTurn(enemy) {
                 enemy.updateBuffs();
                 updateBuffBars();
             }
-            // 内伤叠层系统：injuryStacks 不自动递减，只通过引爆/叠满消耗
-            // 保持 internalInjury 同步供旧判断使用
-            if (enemy.injuryStacks > 0) {
-                enemy.internalInjury = 2;
-            } else if (!enemy.injuryStacks) {
-                if (enemy.internalInjury && enemy.internalInjury > 0) {
-                    enemy.internalInjury--;
-                }
-            }
             updateBuffBars();
 
             if (enemy.planNextAction) {
@@ -836,20 +921,38 @@ function enemyTurn(enemy) {
     }
 }
 
-// 魂灵回合（自律型）
+// 魂灵回合（自律型 或 手操型）
 function spiritTurn(spirit) {
     if (!spirit) return;
     GameState.isPaused = true;
     const result = spirit.onSpiritTurn ? spirit.onSpiritTurn() : null;
     updateUI();
+    if (typeof updateSkillsUI === 'function') updateSkillsUI();
 
-    setTimeout(() => {
-        if (spirit && typeof ctbSystem.resetAV === 'function') {
-            ctbSystem.resetAV(spirit);
+    if (result && result.interactive) {
+        // 连击魂等手操型：等待玩家在魂灵区选技能，回调由 UI 触发
+        if (GameState.spiritTurnPending) {
+            GameState.spiritTurnPending.callback = () => {
+                if (spirit && typeof ctbSystem.resetAV === 'function') {
+                    ctbSystem.resetAV(spirit);
+                    // 交错计数：记录上次行动者为魂灵
+                    if (spirit.state) spirit.state.lastActor = 'spirit';
+                }
+                GameState.spiritTurnPending = null;
+                GameState.isPaused = false;
+                updateUI();
+                if (typeof updateSkillsUI === 'function') updateSkillsUI();
+            };
         }
-        GameState.isPaused = false;
-        updateUI();
-    }, result && result.delayMs ? result.delayMs : 600);
+    } else {
+        setTimeout(() => {
+            if (spirit && typeof ctbSystem.resetAV === 'function') {
+                ctbSystem.resetAV(spirit);
+            }
+            GameState.isPaused = false;
+            updateUI();
+        }, result && result.delayMs ? result.delayMs : 600);
+    }
 }
 
 // 角色选择
@@ -864,6 +967,7 @@ function selectClass(classId) {
     GameState.player = createCharacter(classId);
     ctbSystem.addUnit(GameState.player);
     GameState.selectedClass = classId;
+    GameState.hammers = {}; // 重置锤子记录
     
     const classNameEl = document.getElementById('player-class');
     if (classNameEl) classNameEl.textContent = classNames[classId] || classId;
@@ -871,6 +975,9 @@ function selectClass(classId) {
     
     // 触发回合开始回调
     GameState.player.onTurnStart();
+
+    // 填充 GM 锤子面板
+    if (typeof updateGmHammerPanel === 'function') updateGmHammerPanel();
     
     updateUI();
 }
@@ -925,11 +1032,6 @@ function usePlayerSkill(skillId) {
         baseDamage = preSkillContext.baseDamage;
     }
     
-    // 剑圣疾风满层加成
-    if (GameState.player.classId === 'combo' && GameState.player.speedStacks >= 10) {
-        baseDamage *= 1.2;
-    }
-
     // 通用升级：绝境反击
     if (GameState.player.upgradeDesperationMult && GameState.player.hp < GameState.player.maxHp * 0.3) {
         baseDamage *= (1 + GameState.player.upgradeDesperationMult);
@@ -940,49 +1042,8 @@ function usePlayerSkill(skillId) {
         baseDamage *= (1 + GameState.player.upgradeArmorExpert);
     }
 
-    // 剑圣刃风：满层时每次攻击额外造成30%攻击力伤害
-    if (GameState.player.classId === 'combo' && GameState.player.comboBladeWind && GameState.player.speedStacks >= 10) {
-        baseDamage += GameState.player.getBuffedAtk() * 0.3;
-    }
-
-    // 裂伤击锤子：内伤目标+50%伤害
-    if (skill._activeHammer && skill._activeHammer.morph && skill._activeHammer.morph.extra) {
-        const ext = skill._activeHammer.morph.extra;
-        if (ext.injuryBonusMult && GameState.enemy && GameState.enemy.injuryStacks > 0) {
-            baseDamage *= ext.injuryBonusMult;
-        }
-    }
-
-    // 剑圣连斩的概率连击逻辑
+    // 实际命中段数（直接从技能属性读，多段已通过锤子修改）
     let actualHits = skill.hits || 1;
-    if (skill.id === 'combo_strike') {
-        const hammerExt = skill._activeHammer && skill._activeHammer.morph ? skill._activeHammer.morph.extra : null;
-
-        if (hammerExt && hammerExt.endlessChain) {
-            // 无尽连斩锤子：无上限，起始50%逐步递减
-            actualHits = 1;
-            let chance = hammerExt.baseChance || 0.5;
-            while (chance > 0.01) {
-                if (Math.random() < chance) {
-                    actualHits++;
-                    chance -= (hammerExt.decayPerHit || 0.05);
-                } else {
-                    break;
-                }
-            }
-        } else {
-            actualHits = 1;
-            for (let i = 0; i < 4; i++) {
-                const chance = 0.6 + (GameState.player.comboChainChanceBonus || 0);
-                if (Math.random() < chance) {
-                    actualHits++;
-                } else {
-                    break;
-                }
-            }
-        }
-        Logger.log(`连斩触发 ${actualHits} 次攻击`);
-    }
 
     // 计算总伤害
     let totalDamage = baseDamage;
@@ -992,13 +1053,6 @@ function usePlayerSkill(skillId) {
         if (skill.id === 'burst') {
             const singleHitDmg = baseDamage / (skill.hits || 1);
             totalDamage = singleHitDmg * actualHits;
-        }
-    }
-
-    if (GameState.player.classId === 'combo' && skill.tags && skill.tags.includes('MultiHit')) {
-        const bonus = GameState.player.comboMultiHitBonus || 0;
-        if (bonus > 0) {
-            totalDamage *= (1 + bonus);
         }
     }
 
@@ -1053,13 +1107,15 @@ function usePlayerSkill(skillId) {
     
     let tempCritBonus = 0;
 
-    // 构建行动对象
+    // 构建行动对象（qiCost 供气息魂/连击魂 hooks 使用）
+    const qiCost = (skill.cost && skill.cost.qi) ? skill.cost.qi : 0;
     const playerAction = {
         type: 'skill',
         skill: skill,
         damage: totalDamage,
         cost: skill.cost,
-        hits: actualHits // 传递实际命中数
+        hits: actualHits,
+        qiCost   // 本次消耗的气息量
     };
     
     // 触发角色行动回调
@@ -1109,6 +1165,11 @@ function usePlayerSkill(skillId) {
             }
         }
         
+        // 气宗架势回气等角色回合结束效果
+        if (typeof GameState.player.onTurnEnd === 'function') {
+            GameState.player.onTurnEnd();
+        }
+
         // 更新所有 Buff 持续时间 (回合结束时)
         GameState.player.updateBuffs();
 
@@ -1185,9 +1246,18 @@ function usePlayerSkill(skillId) {
             const effectiveDef = (hits > 1) ? enemyDef * 0.5 : enemyDef;
             let finalHitDmg = Math.max(1, damagePerHit - effectiveDef);
 
-            if (GameState.enemy.internalInjury > 0 && GameState.player) {
-                const mult = GameState.player.qiInternalInjuryMult || 1.3;
-                finalHitDmg *= mult;
+            // 新内伤系统（spiritInjury，由气息魂管理）
+            if ((GameState.enemy.spiritInjury || 0) > 0 && GameState.player) {
+                const vuln = GameState.enemy.spiritInjuryVuln || 1.2;
+                finalHitDmg *= vuln;
+                GameState.enemy.spiritInjury = Math.max(0, GameState.enemy.spiritInjury - 1);
+                // 回流分支：内伤被玩家消耗时 ATK +1
+                const sp = GameState.spirit;
+                if (sp && sp.state && sp.state.branchReflux) {
+                    GameState.player.baseAtk = (GameState.player.baseAtk || 10) + 1;
+                    Logger.log(`【回流】玩家ATK +1（当前 ${GameState.player.baseAtk}）`);
+                }
+                if (typeof updateBuffBars === 'function') updateBuffBars();
             }
 
             // 暴击判定
@@ -1195,10 +1265,7 @@ function usePlayerSkill(skillId) {
             let critMult = (GameState.player && GameState.player.critMult) ? GameState.player.critMult : 2.0;
             let isCrit = false;
 
-            if (GameState.enemy.internalInjury > 0 && GameState.player && GameState.player.qiInternalCritChance) {
-                critChance = Math.max(critChance, GameState.player.qiInternalCritChance);
-                critMult = GameState.player.qiInternalCritMult || 2.0;
-            }
+            // （旧内伤暴击逻辑已移除，暴击仅通过通用升级获得）
             if (tempCritBonus > 0) {
                 critChance += tempCritBonus;
             }
@@ -1211,9 +1278,20 @@ function usePlayerSkill(skillId) {
             const shieldBefore = GameState.enemy.shield || 0;
             totalDamageApplied += finalHitDmg;
             GameState.enemy.takeDamage(finalHitDmg);
-            
+            if (typeof recordSkillDamageStat === 'function' && skill && skill.id) {
+                const statName = skill._tempName || skill.name || skill.id;
+                recordSkillDamageStat(`skill:${skill.id}`, statName, finalHitDmg);
+            }
+
             if (i === 0 && skill.onHit && GameState.player && GameState.enemy) {
                 skill.onHit(GameState.player, GameState.enemy);
+            }
+
+            // 剑圣：每段命中+1连击（noComboGain = false 或未设置时才积攒）
+            if (GameState.player && GameState.player.classId === 'combo' && !skill.noComboGain) {
+                if (typeof GameState.player.addCombo === 'function') {
+                    GameState.player.addCombo(1);
+                }
             }
             
             const enemyBox = document.getElementById('enemy-box');
@@ -1262,7 +1340,7 @@ function usePlayerSkill(skillId) {
                     if (dmgRatio >= 0.15) ParticleSystem.flashScreen('rgba(255,215,0,0.2)', 100);
                 } else {
                     let color = '#ff6b9d';
-                    if (GameState.enemy.internalInjury > 0) color = '#ff0000';
+                    if ((GameState.enemy.spiritInjury || 0) > 0) color = '#ff4400';
                     
                     const skillName = (i === 0 && skill.name) ? skill.name : null;
                     const isUltimate = tags.includes('Ultimate');
@@ -1366,7 +1444,7 @@ function usePlayerSkill(skillId) {
             setTimeout(() => {
                 if (!GameState.isBattleEnded) {
                     Logger.log(`对敌人造成 ${hits} 次伤害，总计 ${totalDamageApplied.toFixed(1)} 点！`, true);
-                    const afterSkillContext = { player: GameState.player, enemy: GameState.enemy, skill, totalDamage: totalDamageApplied, hits };
+                    const afterSkillContext = { player: GameState.player, enemy: GameState.enemy, skill, totalDamage: totalDamageApplied, hits, qiCost };
                     GameEvents.emit('afterSkill', afterSkillContext);
                     if (GameState.spirit && GameState.spirit.onAfterSkill) GameState.spirit.onAfterSkill(afterSkillContext);
                     checkFollowUp(endTurn, skill.id);
@@ -1386,7 +1464,22 @@ function usePlayerSkill(skillId) {
             setTimeout(() => {
                 if (!GameState.isBattleEnded) {
                     Logger.log(`对敌人造成 ${hits} 次伤害，总计 ${totalDamageApplied.toFixed(1)} 点！`, true);
-                    const afterSkillContext = { player: GameState.player, enemy: GameState.enemy, skill, totalDamage: totalDamageApplied, hits };
+
+                    // 气合拳：伤害转护盾
+                    if (skill.damageToShield && GameState.player) {
+                        GameState.player.shield += totalDamageApplied;
+                        Logger.log(`气合拳：获得护盾 +${totalDamageApplied.toFixed(1)}`, true);
+                    }
+                    // 龙腾：晕眩（延迟目标行动条1整轮）
+                    if (skill.applyStun && GameState.enemy) {
+                        const stunRounds = skill.applyStun || 1;
+                        if (typeof delayUnitAV === 'function') {
+                            delayUnitAV(GameState.enemy, stunRounds);
+                            Logger.log(`龙腾晕眩！目标行动推迟${stunRounds}轮`, true);
+                        }
+                    }
+
+                    const afterSkillContext = { player: GameState.player, enemy: GameState.enemy, skill, totalDamage: totalDamageApplied, hits, qiCost };
                     GameEvents.emit('afterSkill', afterSkillContext);
                     if (GameState.spirit && GameState.spirit.onAfterSkill) GameState.spirit.onAfterSkill(afterSkillContext);
                     checkFollowUp(endTurn, skill.id);
@@ -1394,12 +1487,27 @@ function usePlayerSkill(skillId) {
             }, hits * hitInterval + 500);
         }
     } else {
+        // 无伤害技能（架势等）：显示防御特效
+        if (skill.effect === 'stance') {
+            const playerBox = document.getElementById('player-box');
+            if (playerBox) {
+                playerBox.classList.add('stance-flash');
+                setTimeout(() => playerBox.classList.remove('stance-flash'), 400);
+            }
+            const pos = getUnitCenter('player-box');
+            if (pos && typeof ParticleSystem !== 'undefined') {
+                ParticleSystem.showDamageNumber(pos.x, pos.y - 30, '架势！', '#66ccff', null,
+                    { holdMs: 500, fadeMs: 900, floatDistance: 20 });
+                ParticleSystem.createParticles(pos.x, pos.y, 16, '#66ccff');
+            }
+        }
         const afterSkillContext = {
             player: GameState.player,
             enemy: GameState.enemy,
             skill,
             totalDamage: 0,
-            hits: 0
+            hits: 0,
+            qiCost
         };
         GameEvents.emit('afterSkill', afterSkillContext);
         if (GameState.spirit && GameState.spirit.onAfterSkill) {
@@ -1524,12 +1632,23 @@ function executeFollowUp(followUp, callback) {
         if (GameState.isBattleEnded) return;
         const effectiveDef = (hits > 1) ? enemyDef * 0.5 : enemyDef;
         let finalDmg = Math.max(1, rawDmg - effectiveDef);
-        if (enemy.internalInjury > 0 && player.classId !== 'qi') {
-            finalDmg *= (player.qiInternalInjuryMult || 1.3);
+        // 追加技能也触发内伤易伤（spiritInjury）
+        if ((enemy.spiritInjury || 0) > 0) {
+            finalDmg *= (enemy.spiritInjuryVuln || 1.2);
+            enemy.spiritInjury = Math.max(0, enemy.spiritInjury - 1);
+            if (typeof updateBuffBars === 'function') updateBuffBars();
         }
 
         totalApplied += finalDmg;
         enemy.takeDamage(finalDmg);
+        if (typeof recordSkillDamageStat === 'function' && followUp && followUp.id) {
+            const fuLabel = followUp.name ? `追加·${followUp.name}` : followUp.id;
+            recordSkillDamageStat(`fu:${followUp.id}`, fuLabel, finalDmg);
+        }
+        // 剑圣追加技能也按 comboGain 积攒连击（仅第一hit处理，避免多段重复计算）
+        if (i === 0 && player.classId === 'combo' && result.comboGain && result.comboGain > 0) {
+            if (typeof player.addCombo === 'function') player.addCombo(result.comboGain);
+        }
 
         const eBox = document.getElementById('enemy-box');
         if (eBox) {
@@ -1547,6 +1666,7 @@ function executeFollowUp(followUp, callback) {
                     ParticleSystem.createSlash(x, y, 'light', '#ffd54f');
                 }
                 ParticleSystem.createImpact(x, y, 'light', '#ffd54f');
+                if (typeof SFX !== 'undefined') SFX.hit();
 
                 eBox.classList.remove('hit-flash');
                 void eBox.offsetWidth;
@@ -1596,6 +1716,14 @@ function executeFollowUp(followUp, callback) {
                 Logger.log(`追加技能造成 ${totalApplied.toFixed(1)} 点伤害`, true);
             }
             updateResourceUI();
+            // 乱舞链：如果本次追加有 chainId，触发链式追加
+            if (result.chainId && !GameState.isBattleEnded) {
+                const chainDef = (typeof FollowUpSkillDefs !== 'undefined') ? FollowUpSkillDefs[result.chainId] : null;
+                if (chainDef && chainDef.canUse && chainDef.canUse(GameState.player)) {
+                    executeFollowUp(chainDef, callback);
+                    return;
+                }
+            }
             callback();
         }, hits * 200 + 500);
     }
@@ -1635,7 +1763,6 @@ function winBattle() {
 
 // 关卡强化选择
 function offerLevelUpgrades() {
-    // 精英战/Boss给更好的强化池（更多选项）
     const node = RunManager.getCurrentNode();
     const upgradeCount = (node && (node.type === 'elite' || node.type === 'boss')) ? 4 : 3;
     const options = getRandomUpgrades(upgradeCount);
@@ -1646,36 +1773,77 @@ function offerLevelUpgrades() {
                 applyUpgrade(chosenUpgrade);
             }
             closeUpgradeOverlay();
-            advanceToNextNode();
+            afterNodeCompleted();
         });
     } else {
-        advanceToNextNode();
+        afterNodeCompleted();
     }
 }
 
-// 推进到下一个节点
-function advanceToNextNode() {
-    const hasNext = RunManager.advance();
-    if (!hasNext) {
-        victoryGame();
+// 节点完成后的流程分流
+function afterNodeCompleted() {
+    const node = RunManager.getCurrentNode();
+    if (!node) return;
+
+    // Boss 节点完成后：进入下一幕或通关
+    if (node.type === 'boss') {
+        if (RunManager.isLastAct()) {
+            victoryGame();
+        } else {
+            RunManager.advanceAct();
+            RunManager.startAct();
+            Logger.log(`进入 ${RunManager.getActText()}`, true);
+            // 入口节点自动完成，显示地图选下一步
+            openMap();
+        }
         return;
     }
 
+    // 其他节点完成后：显示地图让玩家选下一个节点
+    openMap();
+}
+
+// 打开地图界面
+function openMap() {
+    // 隐藏战斗界面
+    const container = document.querySelector('.container');
+    if (container) container.classList.remove('visible');
+
+    showMapOverlay((nodeId) => {
+        RunManager.chooseNode(nodeId);
+        GameState.currentLevel = RunManager.getTotalVisited();
+        hideMapOverlay();
+        enterCurrentNode();
+    });
+}
+
+// 根据当前节点类型进入对应流程
+function enterCurrentNode() {
     const node = RunManager.getCurrentNode();
-    GameState.currentLevel = RunManager.currentNodeIndex + 1;
+    if (!node) return;
+
+    Logger.log(`进入 ${RunManager.getActText()} ${RunManager.getProgressText()} - ${node.label}`, true);
+    updateUI();
 
     if (node.type === 'rest') {
         handleRestNode();
     } else if (node.type === 'hammer') {
         handleHammerNode();
     } else {
+        // battle / elite / boss -> 进入战斗
+        const container = document.querySelector('.container');
+        if (container) container.classList.add('visible');
         startNextBattle();
     }
 }
 
+// 兼容旧函数名
+function advanceToNextNode() {
+    afterNodeCompleted();
+}
+
 // 锤子节点
 function handleHammerNode() {
-    Logger.log(`到达锻造点（节点 ${RunManager.getProgressText()}）`, true);
     if (typeof AudioManager !== 'undefined') {
         AudioManager.stopBgm();
     }
@@ -1684,8 +1852,8 @@ function handleHammerNode() {
     const options = (typeof getRandomHammers === 'function') ? getRandomHammers(classId, 3) : [];
 
     if (options.length === 0) {
-        Logger.log('没有可用的锤子，继续前进', true);
-        advanceToNextNode();
+        Logger.log('没有可用的魂印，继续前进', true);
+        afterNodeCompleted();
         return;
     }
 
@@ -1693,7 +1861,7 @@ function handleHammerNode() {
         if (chosen && typeof applyHammerToPlayer === 'function') {
             applyHammerToPlayer(chosen);
         }
-        advanceToNextNode();
+        afterNodeCompleted();
     });
 }
 
@@ -1713,7 +1881,7 @@ function showHammerChoice(options, onChosen) {
     overlay.style.pointerEvents = 'auto';
 
     const titleEl = overlay.querySelector('.upgrade-title');
-    if (titleEl) titleEl.textContent = '锻造 — 选择锤子';
+    if (titleEl) titleEl.textContent = '魂铸 — 选择魂印';
 
     container.innerHTML = '';
 
@@ -1738,7 +1906,7 @@ function showHammerChoice(options, onChosen) {
 
         const name = document.createElement('div');
         name.className = 'upgrade-name';
-        name.innerHTML = `${hammer.name} <span class="upgrade-rarity-badge SSR">锤子</span>`;
+        name.innerHTML = `${hammer.name} <span class="upgrade-rarity-badge SSR">魂印</span>`;
         card.appendChild(name);
 
         const desc = document.createElement('div');
@@ -1748,8 +1916,8 @@ function showHammerChoice(options, onChosen) {
 
         const targetTag = document.createElement('div');
         targetTag.className = 'upgrade-class-tag';
-        const skillNames = { light_strike: '轻击', rapid_strike: '迅击', devastate: '崩山',
-            quick_strike: '疾风', combo_strike: '连斩', finisher: '终结技',
+        const skillNames = { light_punch: '轻拳', rapid_strike: '迅击', devastate: '崩山', stance: '架势',
+            quick_slash: '快斩', chain_slash: '连斩', finisher: '终结技', kiri: '见切',
             shoot: '射击', burst: '爆射', reload: '装填',
             yang_strike: '阳击', yin_strike: '阴击', verdict: '宣判' };
         targetTag.textContent = `改造：${skillNames[hammer.targetSkill] || hammer.targetSkill}`;
@@ -1791,16 +1959,17 @@ function resetPlayerForNewBattle(player) {
             if (player.resources.qi) {
                 player.resources.qi.val = player.resources.qi.max;
             }
-            player.qiMountainCrushStacks = 0;
+            player._usedStanceThisTurn = false;
+            player._tookHitAfterStance = false;
+            player._huijiAvailable = false;
             break;
         case 'combo':
             if (player.resources.combo) {
                 player.resources.combo.val = 0;
             }
-            player.speedStacks = 0;
+            player._seeingStance = false;
+            player._perfectParryReady = false;
             player.speed = player.baseSpeed;
-            player._didActThisTurn = false;
-            player._extraActionUsed = false;
             break;
         case 'mana':
             if (player.resources.mana) {
@@ -1837,12 +2006,13 @@ function resetPlayerForNewBattle(player) {
 // 进入下一场战斗（使用 RunManager 获取缩放参数）
 function startNextBattle() {
     const node = RunManager.getCurrentNode();
-    const nodeLabel = RunManager.getNodeLabel();
-    Logger.log(`进入节点 ${RunManager.getProgressText()} - ${nodeLabel}`, true);
-    
+
     // 重置战斗结束标记
     GameState.isBattleEnded = false;
-    
+    if (typeof resetSkillDamageStats === 'function') {
+        resetSkillDamageStats();
+    }
+
     // 根据 RunManager 创建敌人并缩放
     GameState.enemy = createTestEnemy('random');
     const scaling = RunManager.getEnemyScaling();
@@ -1854,10 +2024,13 @@ function startNextBattle() {
     ctbSystem.units = ctbSystem.units.filter(u => u.type === 'player' || u.type === 'spirit');
     ctbSystem.addUnit(GameState.enemy);
     
-    // 重置玩家 AV
+    // 重置玩家 & 魂灵 AV
     if (GameState.player) {
         resetPlayerForNewBattle(GameState.player);
         ctbSystem.resetAV(GameState.player);
+    }
+    if (GameState.spirit && ctbSystem.units.includes(GameState.spirit)) {
+        ctbSystem.resetAV(GameState.spirit);
     }
     
     // 恢复战斗状态
@@ -1904,17 +2077,15 @@ function startNextBattle() {
 
 // 处理休息节点（完整实现在 showRestOverlay 中）
 function handleRestNode() {
-    Logger.log(`到达休息点（节点 ${RunManager.getProgressText()}）`, true);
     if (typeof AudioManager !== 'undefined') {
         AudioManager.stopBgm();
     }
     if (typeof showRestOverlay === 'function') {
         showRestOverlay(() => {
-            advanceToNextNode();
+            afterNodeCompleted();
         });
     } else {
-        // 降级处理：如果休息系统未加载，直接跳过
-        advanceToNextNode();
+        afterNodeCompleted();
     }
 }
 
@@ -1938,7 +2109,7 @@ function victoryGame() {
     const hammerNames = Object.values(equippedHammers).map(h => h.name);
     if (hammerNames.length > 0) {
         hammerSummary = `<div style="margin-top:12px;padding:8px;border:1px solid rgba(255,213,79,0.3);border-radius:6px;background:rgba(255,213,79,0.05);">
-            <div style="color:#ffd54f;font-size:13px;margin-bottom:4px;">锻造记录</div>
+            <div style="color:#ffd54f;font-size:13px;margin-bottom:4px;">魂铸记录</div>
             <div style="color:#e0e0e0;font-size:12px;">${hammerNames.join(' · ')}</div>
         </div>`;
     }
@@ -1954,10 +2125,10 @@ function victoryGame() {
         <div class="gameover-panel" style="border-color: #ffd54f;">
             <div class="gameover-title" style="color: #ffd54f;">通关成功</div>
             <div class="gameover-stats">
-                <div>通过了全部 ${RunManager.nodes.length} 个节点（3幕）</div>
+                <div>通过了全部 3 幕（${RunManager.getTotalVisited()} 个节点）</div>
                 <div>战斗回合: ${GameState.turnCount}</div>
                 <div>获得强化: ${GameState.upgradesChosen} 个</div>
-                <div>获得锤子: ${GameState.hammersChosen || 0} 个</div>
+                <div>魂印铭刻: ${GameState.hammersChosen || 0} 个</div>
                 <div>积累金币: ${RunManager.gold}</div>
                 ${hammerSummary}
             </div>
@@ -1969,6 +2140,7 @@ function victoryGame() {
     if (returnBtn && typeof AudioManager !== 'undefined') {
         AudioManager.bindUiSound(returnBtn, { hover: 'hover', click: 'confirm' });
     }
+    updateUI();
 }
 
 // 绑定选择器事件
@@ -2003,6 +2175,15 @@ window.addEventListener('DOMContentLoaded', () => {
             AudioManager.bindUiSound(upgradeSkip, { hover: 'hover', click: 'skip' });
         }
         upgradeSkip.addEventListener('click', closeUpgradeOverlay);
+    }
+
+    // 日志折叠 toggle
+    const logToggle = document.getElementById('log-toggle');
+    if (logToggle) {
+        logToggle.addEventListener('click', () => {
+            const wrapper = document.getElementById('log-wrapper');
+            if (wrapper) wrapper.classList.toggle('collapsed');
+        });
     }
 
     // 键盘快捷键（1/2/3 对应三个技能）

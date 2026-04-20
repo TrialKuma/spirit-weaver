@@ -47,11 +47,12 @@ body {
 /* Top Bar - 状态栏 */
 .top-bar {
     background: var(--bg-secondary);
-    border-bottom: 2px solid var(--border-color);
-    padding: 10px 20px;
+    border-bottom: 1px solid var(--border-color);
+    padding: 6px 20px;
     display: flex;
     justify-content: space-between;
     align-items: center;
+    font-size: 13px;
 }
 
 .build-info {
@@ -59,113 +60,129 @@ body {
     gap: 20px;
 }
 
+/* ==================== 行动顺序队列（纵向） ==================== */
 .timeline-container {
-    flex: 1;
-    margin: 0 20px;
-    height: 32px;
-    background: var(--bg-tertiary);
-    border: 1px solid var(--border-color);
-    border-radius: 16px;
-    position: relative;
-    overflow: visible;
+    position: absolute;
+    left: 10px;
+    top: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    padding: 10px 8px;
+    background: rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(6px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 10px;
+    z-index: 12;
+    min-width: 96px;
+    pointer-events: none;
 }
 
-/* 行动条中心线 */
-.timeline-container::before {
-    content: '';
-    position: absolute;
-    top: 50%;
-    left: 8px;
-    right: 8px;
-    height: 2px;
-    background: linear-gradient(90deg, var(--border-color), rgba(255,255,255,0.1), var(--border-color));
-    transform: translateY(-50%);
+/* 队列槽位 */
+.tq-slot {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 4px;
+    border-radius: 6px;
+    opacity: 0.55;
+    transition: opacity 0.2s;
 }
 
-/* 左侧"就绪"标记 */
-.timeline-container::after {
-    content: '▸';
-    position: absolute;
-    right: 6px;
-    top: 50%;
-    transform: translateY(-50%);
+.tq-slot.tq-next {
+    opacity: 1;
+    background: rgba(255, 255, 255, 0.05);
+}
+
+/* AV 数字（左侧） */
+.tq-av {
+    font-size: 14px;
+    font-weight: bold;
     color: var(--text-secondary);
-    font-size: 12px;
-    opacity: 0.4;
+    min-width: 30px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
 }
 
-.timeline-track {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
+.tq-slot.tq-next .tq-av {
+    color: var(--text-primary);
+    font-size: 16px;
 }
 
-.timeline-unit {
-    position: absolute;
-    width: 28px;
-    height: 28px;
-    top: 50%;
-    transform: translate(-50%, -50%);
+/* 图标（圆形） */
+.tq-icon {
+    width: 36px;
+    height: 36px;
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 11px;
+    font-size: 13px;
     font-weight: bold;
-    transition: left 0.15s ease-out;
     border: 2px solid;
-    z-index: 2;
-    cursor: default;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    flex-shrink: 0;
 }
 
-.timeline-unit.player {
-    border-color: var(--accent-primary);
-    background: rgba(0, 20, 40, 0.9);
-    color: var(--accent-primary);
-    box-shadow: 0 0 8px rgba(0, 212, 255, 0.3);
+.tq-slot.tq-next .tq-icon {
+    width: 42px;
+    height: 42px;
+    font-size: 15px;
 }
 
-.timeline-unit.enemy {
-    border-color: var(--accent-secondary);
-    background: rgba(40, 10, 20, 0.9);
-    color: var(--accent-secondary);
-    box-shadow: 0 0 8px rgba(255, 107, 157, 0.3);
-}
-
-.timeline-unit.spirit {
-    border-color: var(--accent-tertiary);
-    background: rgba(30, 25, 10, 0.9);
-    color: var(--accent-tertiary);
-    box-shadow: 0 0 8px rgba(255, 217, 61, 0.3);
-    width: 24px;
-    height: 24px;
+/* 协力魂灵附属图标 */
+.tq-companion {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     font-size: 10px;
+    border: 1.5px solid rgba(0, 255, 136, 0.5);
+    background: rgba(0, 30, 20, 0.8);
+    margin-left: -4px;
+    flex-shrink: 0;
 }
 
-.timeline-unit.spirit.autonomous {
+/* 颜色：玩家 */
+.tq-slot.player .tq-icon {
     border-color: var(--accent-primary);
     background: rgba(0, 20, 40, 0.9);
     color: var(--accent-primary);
-    box-shadow: 0 0 8px rgba(0, 212, 255, 0.3);
+    box-shadow: 0 0 6px rgba(0, 212, 255, 0.25);
+}
+.tq-slot.tq-next.player .tq-icon {
+    box-shadow: 0 0 12px rgba(0, 212, 255, 0.6);
+    animation: tqPulse 2s ease-in-out infinite;
 }
 
-.timeline-unit.spirit.cooperative {
-    border-color: var(--accent-tertiary);
-    background: rgba(30, 25, 10, 0.9);
-    color: var(--accent-tertiary);
-    box-shadow: 0 0 8px rgba(255, 217, 61, 0.3);
-}
-
-.timeline-unit.spirit.assistant {
+/* 颜色：敌人 */
+.tq-slot.enemy .tq-icon {
     border-color: var(--accent-secondary);
     background: rgba(40, 10, 20, 0.9);
     color: var(--accent-secondary);
-    box-shadow: 0 0 8px rgba(255, 107, 157, 0.3);
+    box-shadow: 0 0 6px rgba(255, 107, 157, 0.25);
+}
+.tq-slot.tq-next.enemy .tq-icon {
+    box-shadow: 0 0 12px rgba(255, 107, 157, 0.6);
+    animation: tqPulse 2s ease-in-out infinite;
+}
+
+/* 颜色：魂灵（绿色系） */
+.tq-slot.spirit .tq-icon {
+    border-color: #00ff88;
+    background: rgba(0, 30, 20, 0.9);
+    color: #00ff88;
+    box-shadow: 0 0 6px rgba(0, 255, 136, 0.25);
+}
+.tq-slot.tq-next.spirit .tq-icon {
+    box-shadow: 0 0 12px rgba(0, 255, 136, 0.6);
+    animation: tqPulse 2s ease-in-out infinite;
+}
+
+@keyframes tqPulse {
+    0%, 100% { filter: brightness(1); }
+    50% { filter: brightness(1.3); }
 }
 
 /* Main Stage - 战斗区域 */
@@ -176,8 +193,35 @@ body {
     align-items: center;
     padding: 40px;
     position: relative;
-    background: radial-gradient(circle at center, #1a1a2e 0%, #0a0a0a 100%);
+    background-color: #0a0a0a;
+    background-image: radial-gradient(circle at center, #1a1a2e 0%, #0a0a0a 100%);
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
     overflow: hidden;
+    transition: background-image 0.6s ease;
+}
+
+/* 战斗背景：按关卡切换；中央 vignette 由 .battle-bg-vignette 进一步压暗保证 UI 可读 */
+.main-stage[data-stage="1"] {
+    background-image:
+        radial-gradient(ellipse 55% 45% at 50% 55%, rgba(0,0,0,0.45) 0%, transparent 75%),
+        url('../assets/art/backgrounds/battle/bg_stage_1.png');
+}
+.main-stage[data-stage="2"] {
+    background-image:
+        radial-gradient(ellipse 55% 45% at 50% 55%, rgba(0,0,0,0.45) 0%, transparent 75%),
+        url('../assets/art/backgrounds/battle/bg_stage_2.png');
+}
+.main-stage[data-stage="3"] {
+    background-image:
+        radial-gradient(ellipse 60% 50% at 50% 50%, rgba(0,0,0,0.55) 0%, transparent 75%),
+        url('../assets/art/backgrounds/battle/bg_stage_3.png');
+}
+.main-stage[data-stage="4"] {
+    background-image:
+        radial-gradient(ellipse 60% 50% at 50% 50%, rgba(0,0,0,0.5) 0%, transparent 75%),
+        url('../assets/art/backgrounds/battle/bg_stage_4.png');
 }
 
 /* --- 战斗背景动态层 --- */
@@ -193,17 +237,17 @@ body {
     position: absolute;
     inset: 0;
     background-image:
-        linear-gradient(rgba(0, 212, 255, 0.04) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(0, 212, 255, 0.04) 1px, transparent 1px);
+        linear-gradient(rgba(0, 212, 255, 0.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 212, 255, 0.025) 1px, transparent 1px);
     background-size: 80px 80px;
-    mask-image: radial-gradient(ellipse 70% 60% at 50% 50%, rgba(0,0,0,0.6) 0%, transparent 75%);
-    -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 50%, rgba(0,0,0,0.6) 0%, transparent 75%);
+    mask-image: radial-gradient(ellipse 70% 60% at 50% 50%, rgba(0,0,0,0.4) 0%, transparent 75%);
+    -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 50%, rgba(0,0,0,0.4) 0%, transparent 75%);
     animation: battleGridPulse 6s ease-in-out infinite;
 }
 
 @keyframes battleGridPulse {
-    0%, 100% { opacity: 0.5; }
-    50% { opacity: 1; }
+    0%, 100% { opacity: 0.25; }
+    50% { opacity: 0.5; }
 }
 
 .battle-bg-vignette {
@@ -310,6 +354,69 @@ body {
     font-size: 24px;
     position: relative;
     z-index: 2;
+}
+
+/* 玩家立绘：以 box 底部为锚点向上延伸，box 充当"基座" */
+.player-portrait {
+    display: none; /* 立绘暂时隐藏 */
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    transform: translate(-50%, 14%);
+    width: 240px;
+    height: auto;
+    pointer-events: none;
+    z-index: 3;
+    filter: drop-shadow(0 10px 22px rgba(0, 0, 0, 0.7));
+    opacity: 0;
+    transition: opacity 0.4s ease, filter 0.3s ease;
+}
+
+.player-portrait.loaded {
+    opacity: 1;
+}
+
+/* 有立绘时，box 彻底透明化，只用底部一圈光环作为"立足点" */
+#player-box.has-portrait {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+}
+
+#player-box.has-portrait::before {
+    content: '';
+    position: absolute;
+    left: 50%;
+    bottom: -6px;
+    transform: translateX(-50%);
+    width: 140px;
+    height: 24px;
+    border-radius: 50%;
+    background: radial-gradient(ellipse at center, rgba(0, 212, 255, 0.45) 0%, rgba(0, 212, 255, 0.18) 40%, transparent 75%);
+    filter: blur(2px);
+    pointer-events: none;
+    z-index: 1;
+    transition: background 0.3s, filter 0.3s;
+}
+
+#player-box.has-portrait.active-turn::before {
+    background: radial-gradient(ellipse at center, rgba(0, 255, 136, 0.55) 0%, rgba(0, 255, 136, 0.22) 40%, transparent 75%);
+    animation: portraitFootGlow 1.5s ease-in-out infinite;
+}
+
+@keyframes portraitFootGlow {
+    0%, 100% { filter: blur(2px) brightness(1); }
+    50%      { filter: blur(3px) brightness(1.4); }
+}
+
+/* 隐藏旧的"玩家"文字标签（立绘已表达身份） */
+#player-box.has-portrait .player-label {
+    display: none;
+}
+
+/* 立绘亮度按职业微调（剑圣胸前剑光过亮，略压低） */
+.player-portrait[data-class="combo"] {
+    filter: drop-shadow(0 10px 22px rgba(0, 0, 0, 0.7)) brightness(0.92);
 }
 
 /* ==================== 战斗动作动画 ==================== */
@@ -769,11 +876,183 @@ body {
     text-align: center;
 }
 
+/* GM：魂灵祭坛全图鉴（仅 DEBUG 模式显示） */
+.spirit-gm-strip {
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px dashed rgba(255, 204, 0, 0.35);
+    border-radius: 8px;
+    padding-left: 8px;
+    padding-right: 8px;
+    margin-left: -8px;
+    margin-right: -8px;
+    background: rgba(255, 204, 0, 0.04);
+}
+
+.spirit-gm-toggle-row {
+    display: flex;
+    justify-content: center;
+}
+
+.spirit-gm-toggle {
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    color: #ffcc00;
+    background: rgba(255, 204, 0, 0.12);
+    border: 1px solid rgba(255, 204, 0, 0.55);
+    border-radius: 8px;
+    padding: 10px 16px;
+    cursor: default;
+    user-select: none;
+    text-align: center;
+    line-height: 1.5;
+    max-width: 100%;
+    box-shadow: 0 0 10px rgba(255, 204, 0, 0.12);
+}
+
+.spirit-gm-body {
+    margin-top: 12px;
+    max-height: min(50vh, 400px);
+    overflow-y: auto;
+    padding-right: 6px;
+    scrollbar-width: thin;
+}
+
+.spirit-gm-body::-webkit-scrollbar {
+    width: 8px;
+}
+
+.spirit-gm-body::-webkit-scrollbar-thumb {
+    background: rgba(255, 204, 0, 0.25);
+    border-radius: 4px;
+}
+
+.spirit-gm-section {
+    margin-bottom: 12px;
+}
+
+.spirit-gm-section:last-child {
+    margin-bottom: 0;
+}
+
+.spirit-gm-section-title {
+    font-size: 13px;
+    color: var(--text-secondary);
+    letter-spacing: 1.5px;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+}
+
+.spirit-gm-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+    align-items: start;
+}
+
+.spirit-gm-tile {
+    font-family: inherit;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+    gap: 6px;
+    min-height: 0;
+    padding: 10px 9px;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    background: rgba(0, 0, 0, 0.35);
+    cursor: pointer;
+    transition: transform 0.15s, border-color 0.2s, box-shadow 0.2s;
+    min-width: 0;
+    text-align: center;
+}
+
+.spirit-gm-tile-icon {
+    font-size: 28px;
+    line-height: 1;
+    align-self: center;
+}
+
+.spirit-gm-tile-name {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1.25;
+    text-align: center;
+    align-self: center;
+}
+
+.spirit-gm-tile-desc {
+    font-size: 12px;
+    font-weight: 400;
+    color: #c8c8c8;
+    line-height: 1.55;
+    text-align: left;
+    margin-top: 2px;
+    padding-top: 6px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.spirit-gm-tile.autonomous {
+    border-color: rgba(0, 212, 255, 0.35);
+}
+.spirit-gm-tile.autonomous .spirit-gm-tile-name {
+    color: #7ee8ff;
+}
+
+.spirit-gm-tile.cooperative {
+    border-color: rgba(255, 213, 79, 0.35);
+}
+.spirit-gm-tile.cooperative .spirit-gm-tile-name {
+    color: #ffe082;
+}
+
+.spirit-gm-tile.assistant {
+    border-color: rgba(255, 107, 157, 0.35);
+}
+.spirit-gm-tile.assistant .spirit-gm-tile-name {
+    color: #f8bbd0;
+}
+
+.spirit-gm-tile:hover {
+    transform: translateY(-2px);
+}
+
+.spirit-gm-tile.autonomous:hover {
+    box-shadow: 0 4px 14px rgba(0, 212, 255, 0.2);
+    border-color: #00d4ff;
+}
+
+.spirit-gm-tile.cooperative:hover {
+    box-shadow: 0 4px 14px rgba(255, 213, 79, 0.2);
+    border-color: #ffd54f;
+}
+
+.spirit-gm-tile.assistant:hover {
+    box-shadow: 0 4px 14px rgba(255, 107, 157, 0.2);
+    border-color: #ff6b9d;
+}
+
+.spirit-gm-tile-chosen {
+    outline: 2px solid #ffcc00;
+    outline-offset: 2px;
+    box-shadow: 0 0 16px rgba(255, 204, 0, 0.35);
+}
+
 /* ==================== 魂灵祭坛模式（战前全屏场景） ==================== */
 
 /* 祭坛模式：深色背景，更沉浸 */
 .spirit-select-overlay.shrine-mode {
-    background: radial-gradient(ellipse at center, rgba(10, 10, 30, 0.92) 0%, rgba(0, 0, 0, 0.97) 100%);
+    background-color: #050306;
+    background-image:
+        radial-gradient(ellipse 65% 55% at 50% 50%, rgba(5, 3, 6, 0.72) 0%, rgba(5, 3, 6, 0.45) 60%, rgba(5, 3, 6, 0.85) 100%),
+        url('../assets/art/backgrounds/bg_spirit_altar.png');
+    background-size: cover, cover;
+    background-position: center, center;
+    background-repeat: no-repeat, no-repeat;
     animation: shrineEnter 0.6s ease-out both;
 }
 
@@ -1245,6 +1524,88 @@ body {
     z-index: 10;
 }
 
+/* 本场技能伤害统计（战斗区右下） */
+.damage-stats-panel {
+    display: none;
+    position: absolute;
+    right: 14px;
+    bottom: 14px;
+    z-index: 13;
+    min-width: 168px;
+    max-width: 240px;
+    max-height: 38vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    padding: 8px 10px 10px;
+    border-radius: 10px;
+    background: rgba(10, 10, 18, 0.82);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.45);
+    backdrop-filter: blur(8px);
+    pointer-events: none;
+}
+
+.damage-stats-title {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    margin-bottom: 6px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.damage-stats-list {
+    overflow-y: auto;
+    max-height: calc(38vh - 42px);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    scrollbar-width: thin;
+}
+
+.damage-stats-list::-webkit-scrollbar {
+    width: 5px;
+}
+
+.damage-stats-list::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 3px;
+}
+
+.damage-stats-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 8px;
+    font-size: 12px;
+    line-height: 1.35;
+}
+
+.damage-stats-name {
+    color: var(--text-primary);
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.damage-stats-num {
+    font-weight: 700;
+    color: #ff8a80;
+    font-variant-numeric: tabular-nums;
+    flex-shrink: 0;
+}
+
+.damage-stats-empty {
+    font-size: 11px;
+    color: var(--text-secondary);
+    font-style: italic;
+}
+
 /* Bottom Panel - 控制面板 */
 .bottom-panel {
     background: linear-gradient(180deg, rgba(20,20,20,0.95) 0%, var(--bg-secondary) 100%);
@@ -1261,21 +1622,22 @@ body {
     flex: 0 0 auto;
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    background: rgba(0,0,0,0.25);
-    border: 1px solid rgba(255,255,255,0.06);
-    border-radius: 8px;
-    padding: 12px 14px;
-    min-width: 160px;
+    gap: 6px;
+    background: rgba(0,0,0,0.3);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 10px;
+    padding: 10px 14px 12px;
+    align-items: center;
 }
 
 .resource-panel-title {
-    font-size: 11px;
+    font-size: 10px;
     font-weight: bold;
     color: var(--text-secondary);
-    letter-spacing: 2px;
+    letter-spacing: 3px;
     text-transform: uppercase;
-    margin-bottom: 2px;
+    opacity: 0.6;
+    margin-bottom: 0;
 }
 
 .resource-display {
@@ -1375,6 +1737,13 @@ body {
     border-color: #9933ff;
 }
 
+/* 弹药：金黄圆形，与魔力蓝方形一眼区分 */
+.resource-cell.ammo {
+    background: #ffc107;
+    border-color: #ffc107;
+    border-radius: 50%;
+}
+
 /* 判官阴阳双色格子 */
 .resource-cell.balance-yin.active {
     background: #9933ff;
@@ -1397,21 +1766,202 @@ body {
     opacity: 0.6;
 }
 
+/* ══════════════════════════════════════════════
+   技能栏 4区块网格布局
+   [被动] | [主动2×2] [追加] | [魂灵]
+   ══════════════════════════════════════════════ */
+/* ══════════════════════════════════════════════
+   技能栏布局：[玩家主动+追加 (3fr)] | [魂灵 (2fr)]
+   行：主动 auto 按内容高，追加拿剩余空间
+   ══════════════════════════════════════════════ */
 .skills-panel {
     flex: 1;
-    display: flex;
-    gap: 8px;
-    align-items: stretch;
-    flex-wrap: wrap;
+    display: grid;
+    /* 玩家4格 : 魂灵2格 = 2:1 */
+    grid-template-columns: 2fr 1fr;
+    /* 两行强制等高：各占一半，最低 72px */
+    grid-template-rows: minmax(72px, 1fr) minmax(72px, 1fr);
+    gap: 6px;
+    min-height: 160px;
 }
+
+/* 被动区已合并进魂灵区，隐藏旧节点 */
+.skill-block.passive-block {
+    display: none;
+}
+
+/* ── 主动技能区（左列第1行，蓝框） ── */
+.skill-block.active-block {
+    grid-column: 1;
+    grid-row: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    align-self: stretch;
+    border: 1px solid rgba(66, 165, 245, 0.3);
+    border-radius: 6px;
+    padding: 6px 8px;
+    background: rgba(66, 165, 245, 0.04);
+}
+
+/* ── 追加技能区（左列第2行，橙框） ── */
+.skill-block.followup-block {
+    grid-column: 1;
+    grid-row: 2;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    align-self: stretch;
+    border: 1px solid rgba(255, 152, 0, 0.3);
+    border-radius: 6px;
+    padding: 6px 8px;
+    background: rgba(255, 152, 0, 0.04);
+}
+
+/* ── 魂灵区（右列，跨2行） ── */
+.skill-block.spirit-block {
+    grid-column: 2;
+    grid-row: 1 / 3;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+/* 魂灵·主动子块（紫框） */
+.spirit-active-sub {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    border: 1px solid rgba(186, 104, 200, 0.35);
+    border-radius: 6px;
+    padding: 6px 8px;
+    background: rgba(186, 104, 200, 0.04);
+    min-height: 0;
+}
+
+/* 魂灵技能横排：撑满宽度，卡片等分 */
+.spirit-skill-row {
+    display: flex;
+    flex-direction: row;
+    gap: 5px;
+    flex: 1;
+    align-items: stretch;
+}
+.spirit-skill-row .skill-card {
+    flex: 1;
+    min-width: 0;
+}
+
+/* 魂灵·被动子块（蓝绿框） */
+.spirit-passive-sub {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    border: 1px solid rgba(38, 166, 154, 0.35);
+    border-radius: 6px;
+    padding: 6px 8px;
+    background: rgba(38, 166, 154, 0.04);
+    min-height: 0;
+}
+
+/* 区块标签通用 */
+.skill-block-label {
+    font-size: 9px;
+    color: rgba(255,255,255,0.35);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 3px;
+    padding-bottom: 2px;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+/* 各区块标签染色 */
+.skill-block.active-block   .skill-block-label { color: rgba(66,165,245,0.7); border-bottom-color: rgba(66,165,245,0.2); }
+.skill-block.followup-block .skill-block-label { color: rgba(255,152,0,0.7);  border-bottom-color: rgba(255,152,0,0.2); }
+.spirit-active-sub          .skill-block-label { color: rgba(186,104,200,0.8);border-bottom-color: rgba(186,104,200,0.2); }
+.spirit-passive-sub         .skill-block-label { color: rgba(38,166,154,0.8); border-bottom-color: rgba(38,166,154,0.2); }
+
+/* 空位占位符 */
+.skill-block-empty {
+    font-size: 10px;
+    color: rgba(255,255,255,0.2);
+    text-align: center;
+    padding: 8px 4px;
+    font-style: italic;
+}
+
+/* 主动技能4×1横排 */
+.active-skill-grid {
+    display: flex;
+    flex-direction: row;
+    gap: 5px;
+    flex-wrap: nowrap;
+}
+/* 主动技能卡片等宽、撑满行高 */
+.active-skill-grid .skill-card {
+    flex: 1;
+    min-width: 0;
+    align-self: stretch;
+}
+
+/* 追加技能横排，垂直撑满以维持1:1行高 */
+.followup-row {
+    display: flex;
+    gap: 5px;
+    align-items: stretch;
+    flex: 1;
+    flex-wrap: nowrap;
+}
+.followup-row .skill-card {
+    flex: 0 0 auto;
+}
+
+/* 追加技能激活提示条 */
+.followup-hint-bar {
+    font-size: 10px;
+    color: #ffd54f;
+    text-align: center;
+    animation: pulse-text 1s infinite;
+    margin-top: 2px;
+}
+
+/* 魂灵技能区处于魂灵回合时高亮 */
+.skill-block.spirit-block.spirit-turn-active {
+    border-left-color: rgba(255, 204, 68, 0.4);
+    background: rgba(255, 204, 68, 0.04);
+    border-radius: 4px;
+}
+
+/* 自动触发魂灵技能（橙色，与追加技能同色，不可点击但不半透） */
+.skill-card.spirit-auto-skill {
+    cursor: default;
+    border-color: rgba(255, 152, 0, 0.45);
+    background: rgba(255, 152, 0, 0.06);
+    opacity: 1 !important;
+}
+
+/* 魂灵回合可用技能高亮 */
+.skill-card.spirit-skill-lit {
+    border-color: rgba(255, 204, 68, 0.5) !important;
+    box-shadow: 0 0 8px rgba(255, 204, 68, 0.25);
+}
+
+/* 架势防御特效 */
+@keyframes stance-flash-anim {
+    0% { box-shadow: 0 0 0 rgba(102,204,255,0.8); }
+    50% { box-shadow: 0 0 20px rgba(102,204,255,0.6); }
+    100% { box-shadow: 0 0 0 rgba(102,204,255,0); }
+}
+.stance-flash { animation: stance-flash-anim 0.4s ease-out; }
 
 .skill-card {
     flex: 0 0 auto;
-    width: 100px;
-    min-height: 140px;
+    width: auto;
+    min-height: 70px;
     background: rgba(30,30,30,0.8);
     border: 1px solid rgba(255,255,255,0.08);
-    padding: 12px 10px;
+    padding: 6px 6px;
     cursor: pointer;
     transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
     display: flex;
@@ -1457,11 +2007,24 @@ body {
     color: var(--accent-primary);
     position: relative;
     transition: all 0.25s;
+    overflow: hidden;
+}
+
+.skill-icon img {
+    width: 38px;
+    height: 38px;
+    object-fit: contain;
+    filter: drop-shadow(0 0 3px rgba(255, 215, 100, 0.5));
+    pointer-events: none;
 }
 
 .skill-card:hover .skill-icon {
     transform: scale(1.08);
     box-shadow: 0 0 12px rgba(0, 212, 255, 0.25);
+}
+
+.skill-card:hover .skill-icon img {
+    filter: drop-shadow(0 0 6px rgba(255, 215, 100, 0.8));
 }
 
 .skill-icon.enhanced::before {
@@ -1523,6 +2086,11 @@ body {
     flex-shrink: 0;
 }
 
+/* 弹药格子：圆形（与魔力方形区分），尺寸与其他格子一致 */
+.skill-cost-cell.ammo {
+    border-radius: 50%;
+}
+
 /* Tooltip 样式 */
 .skill-tooltip {
     position: absolute;
@@ -1558,14 +2126,35 @@ body {
     font-size: 11px;
     color: var(--text-secondary);
     text-transform: uppercase;
-    margin-bottom: 8px;
+    margin-bottom: 6px;
+    letter-spacing: 0.5px;
+}
+
+/* 消耗格子行 */
+.tooltip-cost-row {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    margin-bottom: 7px;
+    flex-wrap: wrap;
+}
+.tooltip-cost-label {
+    font-size: 10px;
+    color: rgba(255,255,255,0.4);
+    margin-right: 2px;
+}
+.tooltip-cost-row .skill-cost-cell {
+    width: 9px;
+    height: 9px;
+    border-radius: 2px;
+    flex-shrink: 0;
 }
 
 .tooltip-desc {
     font-size: 12px;
     color: var(--text-primary);
-    line-height: 1.4;
-    margin-bottom: 5px;
+    line-height: 1.5;
+    white-space: pre-line;
 }
 
 .tooltip-damage {
@@ -1586,18 +2175,54 @@ body {
     border: 1px solid var(--accent-primary);
 }
 
-.log-panel {
+/* 日志折叠包装器 */
+.log-wrapper {
     flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 180px;
     background: rgba(0,0,0,0.3);
     border: 1px solid rgba(255,255,255,0.06);
     border-radius: 8px;
-    padding: 10px 12px;
+    overflow: hidden;
+}
+
+.log-toggle {
+    padding: 6px 12px;
+    font-size: 11px;
+    font-weight: bold;
+    color: var(--text-secondary);
+    letter-spacing: 1px;
+    cursor: pointer;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+.log-toggle:hover { color: var(--text-primary); }
+.log-toggle-arrow {
+    transition: transform 0.2s;
+    font-size: 10px;
+}
+.log-wrapper:not(.collapsed) .log-toggle-arrow {
+    transform: rotate(90deg);
+}
+
+.log-panel {
+    padding: 0 12px 10px;
     overflow-y: auto;
-    max-height: 160px;
+    max-height: 150px;
     font-size: 12px;
     font-family: 'Consolas', 'Courier New', monospace;
     line-height: 1.5;
-    min-width: 200px;
+    transition: max-height 0.25s ease, padding 0.25s ease;
+}
+
+.log-wrapper.collapsed .log-panel {
+    max-height: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    overflow: hidden;
 }
 
 .log-entry {
@@ -1691,7 +2316,13 @@ body {
     left: 0;
     width: 100%;
     height: 100%;
-    background: var(--bg-primary);
+    background-color: var(--bg-primary);
+    background-image:
+        radial-gradient(ellipse 60% 50% at 50% 55%, rgba(0,0,0,0.55) 0%, transparent 70%),
+        url('../assets/art/backgrounds/bg_class_select.png');
+    background-size: cover, cover;
+    background-position: center, center;
+    background-repeat: no-repeat, no-repeat;
     z-index: 1000;
     display: flex;
     flex-direction: column;
@@ -1852,10 +2483,7 @@ body {
 .character-card[data-class="mana"] .card-name { color: #64b5f6; }
 .character-card[data-class="balance"] .card-name { color: #b388ff; }
 
-.character-card[data-class="qi"] .card-icon { background: rgba(255, 77, 77, 0.1); border-color: rgba(255, 77, 77, 0.3); color: #ff4d4d; }
-.character-card[data-class="combo"] .card-icon { background: rgba(255, 204, 0, 0.1); border-color: rgba(255, 204, 0, 0.3); color: #ffcc00; }
-.character-card[data-class="mana"] .card-icon { background: rgba(51, 153, 255, 0.1); border-color: rgba(51, 153, 255, 0.3); color: #3399ff; }
-.character-card[data-class="balance"] .card-icon { background: rgba(179, 136, 255, 0.1); border-color: rgba(179, 136, 255, 0.3); color: #b388ff; }
+/* card-icon 现使用图片徽章，职业色块已不再需要（保留 hover 边框色见上方） */
 
 /* Hover 职业专属 */
 .character-card[data-class="qi"]:hover { border-color: rgba(255, 77, 77, 0.6); box-shadow: 0 8px 32px rgba(255, 77, 77, 0.2), 0 0 0 1px rgba(255, 77, 77, 0.1); }
@@ -1879,21 +2507,30 @@ body {
 
 /* --- 卡片内元素 --- */
 .card-icon {
-    width: 64px;
-    height: 64px;
-    border-radius: 50%;
-    border: 2px solid var(--border-color);
-    background: rgba(0, 0, 0, 0.3);
+    width: 96px;
+    height: 96px;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 30px;
-    margin: 20px auto 12px;
+    margin: 16px auto 12px;
     transition: all 0.35s;
+    position: relative;
+}
+
+.card-icon img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.6));
+    transition: filter 0.35s;
 }
 
 .character-card:hover .card-icon {
     transform: scale(1.1);
+}
+
+.character-card:hover .card-icon img {
+    filter: drop-shadow(0 6px 18px rgba(0, 0, 0, 0.8));
 }
 
 .character-card.selected .card-icon {
@@ -2376,6 +3013,104 @@ body {
     50% { box-shadow: 0 0 25px rgba(255, 102, 102, 0.6), 0 0 50px rgba(255, 102, 102, 0.2); }
 }
 
+/* ==================== 资源 Block（图标 + 名称 + 格子） ==================== */
+.resource-blocks-row {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 14px;
+    flex-wrap: wrap;
+}
+
+.resource-block {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px 8px;
+    min-width: 130px;
+    border-radius: 8px;
+    transition: background 0.3s;
+}
+
+.resource-block-icon {
+    width: 64px;
+    height: 64px;
+    object-fit: contain;
+    filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.18));
+    transition: filter 0.4s, opacity 0.4s, transform 0.3s;
+}
+
+.resource-block-name {
+    font-size: 11px;
+    color: var(--text-secondary);
+    letter-spacing: 2px;
+    line-height: 1;
+    margin-top: 2px;
+}
+
+.resource-block-value {
+    margin-top: 2px;
+    display: flex;
+    justify-content: center;
+}
+
+/* 状态：枯竭（val = 0） */
+.resource-block.empty .resource-block-icon {
+    filter: saturate(0.15) brightness(0.45) drop-shadow(0 0 4px rgba(0,0,0,0.5));
+    opacity: 0.45;
+}
+.resource-block.empty .resource-block-name {
+    opacity: 0.5;
+}
+
+/* 状态：满（val = max） */
+.resource-block.full .resource-block-icon {
+    animation: resourceFullPulse 2.4s ease-in-out infinite;
+}
+
+/* 资源块光晕色按 key 区分 */
+.resource-block-qi.full .resource-block-icon {
+    animation-name: resourcePulseQi;
+}
+.resource-block-combo.full .resource-block-icon {
+    animation-name: resourcePulseCombo;
+}
+.resource-block-mana.full .resource-block-icon {
+    animation-name: resourcePulseMana;
+}
+.resource-block-balance.balance-yang-extreme .resource-block-icon {
+    animation: resourcePulseYang 2s ease-in-out infinite;
+}
+.resource-block-balance.balance-yin-extreme .resource-block-icon {
+    animation: resourcePulseYin 2s ease-in-out infinite;
+}
+
+@keyframes resourceFullPulse {
+    0%, 100% { filter: drop-shadow(0 0 8px rgba(255,255,255,0.2)); }
+    50%      { filter: drop-shadow(0 0 18px rgba(255,255,255,0.45)); }
+}
+@keyframes resourcePulseQi {
+    0%, 100% { filter: drop-shadow(0 0 10px rgba(255, 77, 77, 0.4)); }
+    50%      { filter: drop-shadow(0 0 22px rgba(255, 138, 101, 0.7)); }
+}
+@keyframes resourcePulseCombo {
+    0%, 100% { filter: drop-shadow(0 0 10px rgba(255, 215, 0, 0.4)); }
+    50%      { filter: drop-shadow(0 0 22px rgba(255, 215, 0, 0.7)); }
+}
+@keyframes resourcePulseMana {
+    0%, 100% { filter: drop-shadow(0 0 10px rgba(100, 181, 246, 0.4)); }
+    50%      { filter: drop-shadow(0 0 22px rgba(51, 153, 255, 0.7)); }
+}
+@keyframes resourcePulseYang {
+    0%, 100% { filter: drop-shadow(0 0 10px rgba(255, 224, 178, 0.5)) brightness(1.1); }
+    50%      { filter: drop-shadow(0 0 24px rgba(255, 215, 0, 0.8)) brightness(1.3); }
+}
+@keyframes resourcePulseYin {
+    0%, 100% { filter: drop-shadow(0 0 10px rgba(179, 136, 255, 0.5)) brightness(0.95); }
+    50%      { filter: drop-shadow(0 0 24px rgba(124, 77, 255, 0.85)) brightness(1.1); }
+}
+
 /* ==================== 资源格子动画 ==================== */
 .resource-cell.active {
     animation: cellPop 0.25s ease-out;
@@ -2476,6 +3211,7 @@ body {
     border-color: rgba(255, 217, 61, 0.25);
     background: rgba(255, 217, 61, 0.03);
     cursor: default;
+    opacity: 1 !important;
 }
 .passive-icon {
     border-color: rgba(255, 217, 61, 0.5) !important;
@@ -2736,4 +3472,156 @@ body {
 @keyframes hammerGlow {
     0%, 100% { opacity: 0.2; }
     50% { opacity: 0.5; }
+}
+
+/* ==================== 地图系统 ==================== */
+
+.map-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 2500;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.85);
+    animation: mapFadeIn 0.4s ease-out;
+}
+.map-overlay.hidden {
+    display: none;
+}
+
+@keyframes mapFadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.map-panel {
+    width: 94vw;
+    max-width: 1100px;
+    height: 88vh;
+    max-height: 860px;
+    border: 1px solid rgba(255, 213, 79, 0.3);
+    border-radius: 12px;
+    background-color: #0a0a0a;
+    background-size: cover;
+    background-position: center;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 0 60px rgba(0, 0, 0, 0.8), inset 0 0 80px rgba(0, 0, 0, 0.5);
+    position: relative;
+}
+.map-panel::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse at center, transparent 30%, rgba(0, 0, 0, 0.7) 100%);
+    pointer-events: none;
+    border-radius: inherit;
+}
+
+.map-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 24px;
+    position: relative;
+    z-index: 1;
+    background: linear-gradient(to bottom, rgba(0, 0, 0, 0.7), transparent);
+}
+
+.map-act-title {
+    font-size: 22px;
+    font-weight: 700;
+    color: #ffd54f;
+    text-shadow: 0 0 12px rgba(255, 213, 79, 0.5);
+    letter-spacing: 2px;
+}
+
+.map-progress {
+    font-size: 14px;
+    color: var(--text-secondary);
+    background: rgba(255, 255, 255, 0.08);
+    padding: 4px 12px;
+    border-radius: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.map-canvas {
+    flex: 1;
+    position: relative;
+    z-index: 1;
+    padding: 8px;
+    overflow: hidden;
+}
+.map-canvas svg {
+    width: 100%;
+    height: 100%;
+}
+
+.map-footer {
+    padding: 12px 24px;
+    text-align: center;
+    position: relative;
+    z-index: 1;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.7), transparent);
+}
+
+.map-hint {
+    font-size: 13px;
+    color: var(--text-secondary);
+    letter-spacing: 1px;
+}
+
+/* 节点动画 */
+.map-node-pulse {
+    animation: mapNodePulse 1.5s ease-in-out infinite;
+}
+@keyframes mapNodePulse {
+    0%, 100% { opacity: 0.5; stroke-width: 2; }
+    50% { opacity: 1; stroke-width: 3; }
+}
+
+.map-node-available {
+    animation: mapNodeGlow 2s ease-in-out infinite;
+}
+@keyframes mapNodeGlow {
+    0%, 100% { opacity: 0.3; }
+    50% { opacity: 0.8; }
+}
+
+.map-node-clickable {
+    cursor: pointer;
+}
+.map-node-clickable image {
+    transition: filter 0.2s, opacity 0.2s;
+}
+.map-node-clickable:hover image {
+    filter: brightness(1.4) drop-shadow(0 0 10px rgba(0, 212, 255, 0.7));
+    opacity: 1 !important;
+}
+
+.map-edge-available {
+    animation: mapEdgePulse 2s ease-in-out infinite;
+}
+@keyframes mapEdgePulse {
+    0%, 100% { stroke-opacity: 0.3; }
+    50% { stroke-opacity: 0.8; }
+}
+
+.map-close-btn {
+    background: rgba(0, 212, 255, 0.1);
+    color: var(--accent-primary);
+    border: 1px solid rgba(0, 212, 255, 0.3);
+    padding: 8px 28px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    letter-spacing: 1px;
+    transition: all 0.2s;
+}
+.map-close-btn:hover {
+    background: rgba(0, 212, 255, 0.2);
+    border-color: rgba(0, 212, 255, 0.6);
+    box-shadow: 0 0 12px rgba(0, 212, 255, 0.3);
 }

@@ -27,8 +27,13 @@ function setUpgradeLevel(id, level) {
 
 function getUpgradePool() {
     const classId = GameState.player ? GameState.player.classId : null;
+    const spiritId = GameState.spirit ? GameState.spirit.id : null;
     return (Array.isArray(UpgradeConfig) ? UpgradeConfig : []).filter(item => {
         if (item.classes && classId && !item.classes.includes(classId)) return false;
+        // 魂灵专属升级：仅当对应魂灵已契约时出现
+        if (item.spirits && item.spirits.length > 0) {
+            if (!spiritId || !item.spirits.includes(spiritId)) return false;
+        }
         if (item.stackable === false && getUpgradeLevel(item.id) > 0) return false;
         return true;
     });
@@ -159,62 +164,82 @@ function applyUpgrade(upgrade) {
             player.insightCounter = 0;
             break;
 
-        // === 气宗 ===
-        case 'qi_internal_injury_mult':
-            player.qiInternalInjuryMult = effect.fixedValue;
+        // === 气宗 - 锤子升级 ===
+        case 'apply_hammer': {
+            const hammerId = effect.hammerId;
+            // 在 HammerConfig 中查找对应锤子
+            const allHammers = typeof HammerConfig !== 'undefined' ? HammerConfig : {};
+            let found = null;
+            for (const classHammers of Object.values(allHammers)) {
+                for (const hammers of Object.values(classHammers)) {
+                    const h = hammers.find(x => x.id === hammerId);
+                    if (h) { found = h; break; }
+                }
+                if (found) break;
+            }
+            if (found && typeof applyHammerToPlayer === 'function') {
+                applyHammerToPlayer(found);
+            }
             break;
-        case 'qi_armor_break_on_injury':
-            player.qiArmorBreakOnInjury = true;
+        }
+        case 'unlock_followup':
+            if (effect.followUpId && player._unlockedFollowUps) {
+                player._unlockedFollowUps.add(effect.followUpId);
+                Logger.log(`解锁追加技能：${effect.followUpId}`, true);
+            }
             break;
-        case 'qi_rapid_speed_boost':
-            player.qiRapidSpeedBoost = effect.totalValue;
+        // === 气息魂升级 ===
+        case 'qis_branch': {
+            const spirit = GameState.spirit;
+            if (spirit && spirit.id === 'qi_spirit') {
+                if (effect.branchMode) {
+                    // 内爆/重伤互斥
+                    spirit.state.branchMode = effect.branchMode;
+                    Logger.log(`气息魂分支：${effect.branchMode === 'explosion' ? '内爆' : '重伤'}`, true);
+                }
+                if (effect.branchReflux) {
+                    spirit.state.branchReflux = true;
+                    Logger.log('气息魂分支：回流', true);
+                }
+            }
             break;
-        case 'qi_internal_crit':
-            player.qiInternalCritChance = effect.totalValue;
-            player.qiInternalCritMult = effect.critMult || 2.0;
+        }
+        case 'qis_whirlwind_upgrade': {
+            const spirit = GameState.spirit;
+            if (spirit && spirit.id === 'qi_spirit') {
+                if (effect.upgradeId === 1) spirit.state.whirlwindSegments = (spirit.state.whirlwindSegments || 3) + 1;
+                if (effect.upgradeId === 3) spirit.state.whirlwindThreshold = 8;
+            }
             break;
-        case 'qi_surge':
-            player.qiSurge = true;
+        }
+        case 'qis_continuation_upgrade': {
+            const spirit = GameState.spirit;
+            if (spirit && spirit.id === 'qi_spirit') {
+                if (effect.upgradeId === 1) spirit.state.xujiianMult = 1.2;
+                if (effect.upgradeId === 2) spirit.state.xujiianUpgrade2 = true;
+                if (effect.upgradeId === 3) spirit.state.xujiianUpgrade3 = true;
+            }
             break;
-        case 'qi_blade':
-            player.qiBlade = true;
+        }
+        // === 连击魂升级 ===
+        case 'cs_branch': {
+            const spirit = GameState.spirit;
+            if (spirit && spirit.id === 'combo_spirit') {
+                if (effect.branchRiding) spirit.state.branchRiding = true;
+                if (effect.branchStorm) spirit.state.branchStorm = true;
+            }
             break;
-        case 'qi_injury_detonate_bonus':
-            player.qiInjuryDetonateBonus = true;
+        }
+        case 'cs_cross_upgrade': {
+            const spirit = GameState.spirit;
+            if (spirit && spirit.id === 'combo_spirit') {
+                if (effect.upgradeId === 1) spirit.state.crossUpgrade1 = true;
+            }
             break;
-        case 'qi_chain_strike':
-            player.qiChainStrike = true;
-            break;
-        case 'qi_mountain_crush':
-            player.qiMountainCrush = true;
-            player.qiMountainCrushStacks = 0;
-            break;
-        case 'qi_inner_flow':
-            player.qiInnerFlow = true;
-            break;
+        }
 
-        // === 剑圣 ===
-        case 'combo_multihit_bonus':
-            player.comboMultiHitBonus = (player.comboMultiHitBonus || 0) + effect.totalValue;
-            break;
-        case 'combo_gale_speed_bonus':
-            player.comboGaleSpeedBonus = effect.totalValue;
-            break;
-        case 'combo_chain_chance':
-            player.comboChainChanceBonus = effect.totalValue;
-            break;
-        case 'combo_finisher_consume_all':
-            player.comboFinisherConsumeAll = true;
-            break;
-        case 'combo_blade_wind':
-            player.comboBladeWind = true;
-            break;
-        case 'combo_gale_guard':
-            player.comboGaleGuard = true;
-            break;
-        case 'combo_afterimage':
-            player.comboAfterimage = true;
-            break;
+        // === 剑圣（旧升级 kinds 已移除，现在走 apply_hammer / unlock_followup） ===
+        // 保留空注释以供参考，不再有剑圣专属升级 kind
 
         // === 魔导 ===
         case 'mana_overflow_atk_bonus':

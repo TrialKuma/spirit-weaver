@@ -65,114 +65,242 @@ const UpgradeConfig = [
         effect: { kind: 'insight' }
     },
 
-    // ==================== 气宗 ====================
-    // --- Base ---
+    // ==================== 气宗 - 角色锤子升级 ====================
+    // 轻拳组（替换二选一，+追加连拳）
     {
-        id: 'qi_internal_injury_boost', name: '内伤加深', icon: '💀',
-        desc: '内伤引爆伤害 +{value}%',
-        classes: ['qi'], tier: 'base', keywords: ['内伤'], weight: 60, stackable: false,
-        effect: { kind: 'qi_internal_injury_mult', fixedValue: 1.5 }
+        id: 'qi_hammer_heavy_fist', name: '重拳', icon: '👊',
+        desc: '替换轻拳：倍率升至150%',
+        classes: ['qi'], tier: 'base', keywords: ['攻击', '锤子'], weight: 60, stackable: false,
+        effect: { kind: 'apply_hammer', hammerId: 'qi_hammer_heavy_fist' }
     },
     {
-        id: 'qi_rapid_speed', name: '迅击加速', icon: '⚡',
-        desc: '迅击后速度 +{value}%',
-        classes: ['qi'], tier: 'base', keywords: ['速度'], weight: 60, stackable: false,
-        effect: { kind: 'qi_rapid_speed_boost', baseValue: 0.2 }
+        id: 'qi_hammer_qi_palm', name: '集气掌', icon: '🌀',
+        desc: '替换轻拳：命中后回复1气',
+        classes: ['qi'], tier: 'base', keywords: ['攻击', '锤子', '资源'], weight: 55, stackable: false,
+        effect: { kind: 'apply_hammer', hammerId: 'qi_hammer_qi_palm' }
     },
     {
-        id: 'qi_surge', name: '气涌', icon: '🌊',
-        desc: '回合开始气回复 +1（从2变3）',
-        classes: ['qi'], tier: 'base', keywords: ['资源'], weight: 55, stackable: false,
-        effect: { kind: 'qi_surge' }
+        id: 'qi_followup_lianquan', name: '连拳', icon: '🥊',
+        desc: '解锁追加：轻拳命中后必定触发连拳（80%，不消耗气）',
+        classes: ['qi'], tier: 'synergy', keywords: ['追加', '攻击'], weight: 55, stackable: false,
+        effect: { kind: 'unlock_followup', followUpId: 'qi_follow_lianquan' }
     },
-    // --- Synergy ---
+    // 迅击组（替换三选一，无追加）
     {
-        id: 'qi_internal_break', name: '崩山破防', icon: '💔',
-        desc: '内伤引爆时附带破防（DEF-2, 2回合）',
-        classes: ['qi'], tier: 'synergy', keywords: ['内伤', '破防'], weight: 50, stackable: false,
-        effect: { kind: 'qi_armor_break_on_injury' }
-    },
-    {
-        id: 'qi_internal_crit', name: '内伤暴击', icon: '🎯',
-        desc: '攻击内伤目标时有 {value}% 暴击率，造成 200% 伤害',
-        classes: ['qi'], tier: 'synergy', keywords: ['内伤', '暴击'], weight: 50, stackable: false,
-        effect: { kind: 'qi_internal_crit', baseValue: 0.35, critMult: 2.0 }
+        id: 'qi_hammer_tieshan', name: '铁山靠', icon: '⛰️',
+        desc: '替换迅击：消耗4气，280%重击',
+        classes: ['qi'], tier: 'base', keywords: ['特技', '锤子'], weight: 55, stackable: false,
+        effect: { kind: 'apply_hammer', hammerId: 'qi_hammer_tieshan' }
     },
     {
-        id: 'qi_blade', name: '气刃', icon: '🗡️',
-        desc: '气≥8时普攻额外叠1层内伤',
-        classes: ['qi'], tier: 'synergy', keywords: ['内伤', '资源'], weight: 50, stackable: false,
-        effect: { kind: 'qi_blade' }
+        id: 'qi_hammer_flash', name: '闪击', icon: '⚡',
+        desc: '替换迅击：2气，200%，命中后可衔接所有已有追加技能',
+        classes: ['qi'], tier: 'synergy', keywords: ['特技', '锤子', '追加'], weight: 50, stackable: false,
+        effect: { kind: 'apply_hammer', hammerId: 'qi_hammer_flash' }
     },
     {
-        id: 'qi_injury_detonate_bonus', name: '引爆强化', icon: '💣',
-        desc: '内伤引爆时额外造成累计增伤量80%的爆发伤害',
-        classes: ['qi'], tier: 'synergy', keywords: ['内伤'], weight: 45, stackable: false,
-        effect: { kind: 'qi_injury_detonate_bonus' }
+        id: 'qi_hammer_rapid3', name: '迅连击', icon: '🌀',
+        desc: '替换迅击：消耗4气，150%×3段各自扣防',
+        classes: ['qi'], tier: 'synergy', keywords: ['特技', '锤子', '多段'], weight: 50, stackable: false,
+        effect: { kind: 'apply_hammer', hammerId: 'qi_hammer_rapid3' }
+    },
+    // 崩山组（替换二选一，+追加震破）
+    {
+        id: 'qi_hammer_devastate_ex', name: '崩山·极', icon: '🔥',
+        desc: '替换崩山：消耗8气起，倾泻所有气，满10气=750%',
+        classes: ['qi'], tier: 'synergy', keywords: ['能量', '锤子'], weight: 50, stackable: false,
+        effect: { kind: 'apply_hammer', hammerId: 'qi_hammer_devastate_ex' }
     },
     {
-        id: 'qi_chain_strike', name: '轻击连环', icon: '👊',
-        desc: '轻击每次命中叠+5%速度buff（1回合）',
-        classes: ['qi'], tier: 'synergy', keywords: ['多段', '速度'], weight: 50, stackable: false,
-        effect: { kind: 'qi_chain_strike' }
+        id: 'qi_hammer_fist_dance', name: '拳舞', icon: '🌪️',
+        desc: '替换崩山：消耗6气，150%×4段各自扣防',
+        classes: ['qi'], tier: 'synergy', keywords: ['能量', '锤子', '多段'], weight: 50, stackable: false,
+        effect: { kind: 'apply_hammer', hammerId: 'qi_hammer_fist_dance' }
     },
     {
-        id: 'qi_mountain_crush', name: '破山势', icon: '⛰️',
-        desc: '崩山命中后，目标DEF永久-1（上限3）',
-        classes: ['qi'], tier: 'synergy', keywords: ['重击', '破防'], weight: 45, stackable: false,
-        effect: { kind: 'qi_mountain_crush' }
+        id: 'qi_followup_zhenpuo', name: '震破', icon: '💫',
+        desc: '解锁追加：崩山后可用震破（150%+推条20%，消耗2气）',
+        classes: ['qi'], tier: 'synergy', keywords: ['追加', '能量'], weight: 50, stackable: false,
+        effect: { kind: 'unlock_followup', followUpId: 'qi_follow_zhenpuo' }
+    },
+    // 架势组（替换二选一，+追加回击）
+    {
+        id: 'qi_hammer_qi_fist', name: '气合拳', icon: '🛡️',
+        desc: '替换架势：消耗2气，150%伤害，等量转化为自身护盾',
+        classes: ['qi'], tier: 'synergy', keywords: ['防御', '锤子'], weight: 50, stackable: false,
+        effect: { kind: 'apply_hammer', hammerId: 'qi_hammer_qi_fist' }
     },
     {
-        id: 'qi_inner_flow', name: '内息循环', icon: '🔄',
-        desc: '迅击命中内伤目标时，额外+1气',
-        classes: ['qi'], tier: 'synergy', keywords: ['内伤', '资源'], weight: 50, stackable: false,
-        effect: { kind: 'qi_inner_flow' }
+        id: 'qi_hammer_dragon', name: '龙腾', icon: '🐉',
+        desc: '替换架势：消耗4气，200%伤害，附加晕眩1回合',
+        classes: ['qi'], tier: 'synergy', keywords: ['防御', '锤子', '控制'], weight: 45, stackable: false,
+        effect: { kind: 'apply_hammer', hammerId: 'qi_hammer_dragon' }
+    },
+    {
+        id: 'qi_followup_huiji', name: '回击', icon: '🛡️',
+        desc: '解锁追加：架势受击后可用回击（120%+回2气，不消耗气）',
+        classes: ['qi'], tier: 'synergy', keywords: ['追加', '防御'], weight: 50, stackable: false,
+        effect: { kind: 'unlock_followup', followUpId: 'qi_follow_huiji' }
     },
 
-    // ==================== 剑圣 ====================
-    // --- Base ---
+    // ==================== 气息魂升级 ====================
     {
-        id: 'combo_multihit_bonus', name: '多段精进', icon: '🔥',
-        desc: '多段攻击每段伤害 +{value}%',
-        classes: ['combo'], tier: 'base', keywords: ['多段'], weight: 70, stackable: true,
-        effect: { kind: 'combo_multihit_bonus', baseValue: 0.1 }
+        id: 'qis_branch_explosion', name: '内爆', icon: '💥',
+        desc: '【气息魂】内伤改为叠层（至3层），叠满触发300%爆发（与重伤互斥）',
+        classes: ['qi'], spirits: ['qi_spirit'], tier: 'synergy', keywords: ['内伤', '爆发'], weight: 50, stackable: false,
+        effect: { kind: 'qis_branch', branchMode: 'explosion' }
     },
     {
-        id: 'combo_gale_speed', name: '疾风强化', icon: '🌪',
-        desc: '疾风每层速度额外 +{value}',
-        classes: ['combo'], tier: 'base', keywords: ['速度', '疾风'], weight: 60, stackable: false,
-        effect: { kind: 'combo_gale_speed_bonus', baseValue: 5 }
+        id: 'qis_branch_heavy', name: '重伤', icon: '💀',
+        desc: '【气息魂】内伤易伤幅度提升至60%（与内爆互斥）',
+        classes: ['qi'], spirits: ['qi_spirit'], tier: 'synergy', keywords: ['内伤'], weight: 50, stackable: false,
+        effect: { kind: 'qis_branch', branchMode: 'heavy' }
     },
     {
-        id: 'combo_chain_chance', name: '连斩增幅', icon: '⛓',
-        desc: '连斩追加概率 +{value}%',
-        classes: ['combo'], tier: 'base', keywords: ['多段'], weight: 60, stackable: false,
-        effect: { kind: 'combo_chain_chance', baseValue: 0.1 }
-    },
-    // --- Synergy ---
-    {
-        id: 'combo_finisher_allin', name: '终结全开', icon: '💫',
-        desc: '终结技消耗所有连击点（至少6），缩放伤害',
-        classes: ['combo'], tier: 'synergy', keywords: ['终结'], weight: 40, stackable: false,
-        effect: { kind: 'combo_finisher_consume_all' }
+        id: 'qis_branch_reflux', name: '回流', icon: '🔄',
+        desc: '【气息魂】内伤被消耗时，玩家ATK永久+1',
+        classes: ['qi'], spirits: ['qi_spirit'], tier: 'synergy', keywords: ['成长'], weight: 50, stackable: false,
+        effect: { kind: 'qis_branch', branchReflux: true }
     },
     {
-        id: 'combo_blade_wind', name: '刃风', icon: '🌬️',
-        desc: '疾风满10层时，每次攻击额外造成30%攻击力伤害',
-        classes: ['combo'], tier: 'synergy', keywords: ['疾风', '多段'], weight: 45, stackable: false,
-        effect: { kind: 'combo_blade_wind' }
+        id: 'qis_whirlwind_1', name: '旋风斩·强化1', icon: '🌪️',
+        desc: '【气息魂】旋风斩攻击段数+1（变4段）',
+        classes: ['qi'], spirits: ['qi_spirit'], tier: 'base', keywords: ['旋风斩'], weight: 55, stackable: false,
+        effect: { kind: 'qis_whirlwind_upgrade', upgradeId: 1 }
     },
     {
-        id: 'combo_gale_guard', name: '疾风护体', icon: '🛡️',
-        desc: '每层疾风提供+1防御',
-        classes: ['combo'], tier: 'synergy', keywords: ['疾风', '生存'], weight: 45, stackable: false,
-        effect: { kind: 'combo_gale_guard' }
+        id: 'qis_whirlwind_3', name: '旋风斩·强化3', icon: '🌪️',
+        desc: '【气息魂】旋风斩触发所需累计量-4（12→8）',
+        classes: ['qi'], spirits: ['qi_spirit'], tier: 'synergy', keywords: ['旋风斩'], weight: 45, stackable: false,
+        effect: { kind: 'qis_whirlwind_upgrade', upgradeId: 3 }
     },
     {
-        id: 'combo_afterimage', name: '残影', icon: '👤',
-        desc: '速度>250时，每次行动后25%概率获得额外行动（一回合限1次）',
-        classes: ['combo'], tier: 'synergy', keywords: ['速度'], weight: 40, stackable: false,
-        effect: { kind: 'combo_afterimage' }
+        id: 'qis_continuation_1', name: '续剑·强化1', icon: '⚔️',
+        desc: '【气息魂】续剑倍率提升至120%',
+        classes: ['qi'], spirits: ['qi_spirit'], tier: 'base', keywords: ['续剑'], weight: 55, stackable: false,
+        effect: { kind: 'qis_continuation_upgrade', upgradeId: 1 }
+    },
+    {
+        id: 'qis_continuation_2', name: '续剑·强化2', icon: '⚔️',
+        desc: '【气息魂】续剑触发时为玩家回复1气',
+        classes: ['qi'], spirits: ['qi_spirit'], tier: 'synergy', keywords: ['续剑', '资源'], weight: 50, stackable: false,
+        effect: { kind: 'qis_continuation_upgrade', upgradeId: 2 }
+    },
+    {
+        id: 'qis_continuation_3', name: '续剑·强化3', icon: '⚔️',
+        desc: '【气息魂】连续释放特技第3次时升格为续剑·终（160%）',
+        classes: ['qi'], spirits: ['qi_spirit'], tier: 'synergy', keywords: ['续剑'], weight: 45, stackable: false,
+        effect: { kind: 'qis_continuation_upgrade', upgradeId: 3 }
+    },
+
+    // ==================== 连击魂升级 ====================
+    {
+        id: 'cs_branch_riding', name: '乘风', icon: '🌬️',
+        desc: '【连击魂】魂灵也受疾风加速（每层+5速度）',
+        classes: ['qi'], spirits: ['combo_spirit'], tier: 'synergy', keywords: ['疾风', '速度'], weight: 50, stackable: false,
+        effect: { kind: 'cs_branch', branchRiding: true }
+    },
+    {
+        id: 'cs_branch_storm', name: '狂风', icon: '🌪️',
+        desc: '【连击魂】每累计获得5层疾风时，魂灵自动追加全体150%攻击',
+        classes: ['qi'], spirits: ['combo_spirit'], tier: 'synergy', keywords: ['疾风', '自动'], weight: 45, stackable: false,
+        effect: { kind: 'cs_branch', branchStorm: true }
+    },
+    {
+        id: 'cs_cross_upgrade1', name: '交错之斩·强化1', icon: '⚡',
+        desc: '【连击魂】交错之斩命中后目标陷入【易伤】（20%，1回合）',
+        classes: ['qi'], spirits: ['combo_spirit'], tier: 'synergy', keywords: ['交错'], weight: 50, stackable: false,
+        effect: { kind: 'cs_cross_upgrade', upgradeId: 1 }
+    },
+
+    // ==================== 剑圣 - 角色锤子升级 ====================
+    // 快斩组（替换二选一，+追加乱舞链）
+    {
+        id: 'combo_hammer_triple_slash', name: '双刃斩', icon: '⚔️',
+        desc: '替换快斩：3段×70%，每段+1连击（共+3）',
+        classes: ['combo'], tier: 'base', keywords: ['攻击', '锤子'], weight: 60, stackable: false,
+        effect: { kind: 'apply_hammer', hammerId: 'combo_hammer_triple_slash' }
+    },
+    {
+        id: 'combo_hammer_armor_break', name: '破防斩', icon: '🔨',
+        desc: '替换快斩：120%单段，降目标DEF 2点（2回合）',
+        classes: ['combo'], tier: 'synergy', keywords: ['攻击', '锤子', '破防'], weight: 55, stackable: false,
+        effect: { kind: 'apply_hammer', hammerId: 'combo_hammer_armor_break' }
+    },
+    {
+        id: 'combo_followup_ranwu', name: '乱舞', icon: '⚔️',
+        desc: '解锁追加：快斩后必定触发乱舞（60%，+1连击），50%触发乱舞·破（需进一步解锁）',
+        classes: ['combo'], tier: 'synergy', keywords: ['追加', '攻击'], weight: 55, stackable: false,
+        effect: { kind: 'unlock_followup', followUpId: 'combo_follow_ranwu' }
+    },
+    {
+        id: 'combo_followup_ranwu_po', name: '乱舞·破', icon: '⚔️',
+        desc: '解锁追加链：乱舞后50%触发乱舞·破（80%，+1连击）',
+        classes: ['combo'], tier: 'synergy', keywords: ['追加'], weight: 50, stackable: false,
+        effect: { kind: 'unlock_followup', followUpId: 'combo_follow_ranwu_po' }
+    },
+    {
+        id: 'combo_followup_ranwu_ji', name: '乱舞·急', icon: '⚔️',
+        desc: '解锁追加链：乱舞·破后50%触发乱舞·急（120%，+1连击）',
+        classes: ['combo'], tier: 'synergy', keywords: ['追加'], weight: 45, stackable: false,
+        effect: { kind: 'unlock_followup', followUpId: 'combo_follow_ranwu_ji' }
+    },
+    // 连斩组（替换三选一，无追加）
+    {
+        id: 'combo_hammer_dash_slash', name: '疾步斩', icon: '💨',
+        desc: '替换连斩：消耗2连击，100%×2段，推进行动条20%',
+        classes: ['combo'], tier: 'synergy', keywords: ['特技', '锤子', '速度'], weight: 55, stackable: false,
+        effect: { kind: 'apply_hammer', hammerId: 'combo_hammer_dash_slash' }
+    },
+    {
+        id: 'combo_hammer_whirl_blade', name: '旋刃', icon: '🌀',
+        desc: '替换连斩：消耗4连击，80%×2段（覆盖全敌），净-2连击',
+        classes: ['combo'], tier: 'synergy', keywords: ['特技', '锤子', '全体'], weight: 50, stackable: false,
+        effect: { kind: 'apply_hammer', hammerId: 'combo_hammer_whirl_blade' }
+    },
+    {
+        id: 'combo_hammer_frenzy', name: '乱击', icon: '⚡',
+        desc: '替换连斩：消耗3连击，70%×5段，净+2连击',
+        classes: ['combo'], tier: 'synergy', keywords: ['特技', '锤子', '多段'], weight: 50, stackable: false,
+        effect: { kind: 'apply_hammer', hammerId: 'combo_hammer_frenzy' }
+    },
+    // 终结技组（替换二选一，+追加残心）
+    {
+        id: 'combo_hammer_hundred_slash', name: '百裂终结', icon: '🔥',
+        desc: '替换终结技：消耗8连击，100%×4段，各自扣防，每段+1连击（净-4）',
+        classes: ['combo'], tier: 'synergy', keywords: ['能量', '锤子', '多段'], weight: 50, stackable: false,
+        effect: { kind: 'apply_hammer', hammerId: 'combo_hammer_hundred_slash' }
+    },
+    {
+        id: 'combo_hammer_issan', name: '一闪', icon: '⚡',
+        desc: '替换终结技：消耗10连击，700%单发全梭哈',
+        classes: ['combo'], tier: 'synergy', keywords: ['能量', '锤子'], weight: 45, stackable: false,
+        effect: { kind: 'apply_hammer', hammerId: 'combo_hammer_issan' }
+    },
+    {
+        id: 'combo_followup_zanxin', name: '残心', icon: '🌀',
+        desc: '解锁追加：终结技后可触发残心（100%，回复3连击）',
+        classes: ['combo'], tier: 'synergy', keywords: ['追加', '资源'], weight: 55, stackable: false,
+        effect: { kind: 'unlock_followup', followUpId: 'combo_follow_zanxin' }
+    },
+    // 见切组（替换二选一，+追加追击）
+    {
+        id: 'combo_hammer_flow_water', name: '流水', icon: '💧',
+        desc: '替换见切：消耗2连击，80%攻击+攻击力80%护盾，+1连击',
+        classes: ['combo'], tier: 'synergy', keywords: ['防御', '锤子'], weight: 50, stackable: false,
+        effect: { kind: 'apply_hammer', hammerId: 'combo_hammer_flow_water' }
+    },
+    {
+        id: 'combo_hammer_afterimage', name: '残像', icon: '👤',
+        desc: '替换见切：0连击，不反击，获得ATK+30% buff（2回合）',
+        classes: ['combo'], tier: 'synergy', keywords: ['防御', '锤子', '增益'], weight: 50, stackable: false,
+        effect: { kind: 'apply_hammer', hammerId: 'combo_hammer_afterimage' }
+    },
+    {
+        id: 'combo_followup_kiri_chase', name: '追击', icon: '💨',
+        desc: '解锁追加：见切反击后自动追加追击（80%，+1连击）',
+        classes: ['combo'], tier: 'synergy', keywords: ['追加', '防御'], weight: 50, stackable: false,
+        effect: { kind: 'unlock_followup', followUpId: 'combo_follow_kiri_chase' }
     },
 
     // ==================== 魔导 ====================

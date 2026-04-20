@@ -48,6 +48,7 @@ class Enemy extends Character {
                     totalDamage += damage;
                 }
                 result.damage = totalDamage;
+                result.hits = hits;
 
                 // 附带 Debuff
                 if (action.debuff) {
