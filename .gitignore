@@ -9,3 +9,23 @@
 /simulate_balance.py
 /Untitled
 /未命名.md
+
+# Local tooling and offline assets (not part of the shipped web game)
+/asset-cut/
+/audio-old/
+
+# Root-level spreadsheets and offline simulation helpers
+/Main.xlsx
+/战斗规则Ver1.0.xlsx
+/技能设计示例-雷克老板.xlsx
+/analyze_and_extend_melody.py
+/simulate_builds.py
+/simulate_detail.py
+/simulate_new_balance.py
+
+# In-repo design notes for artists (keep locally, do not ship)
+/game-v2/doc/
+
+# Python bytecode
+__pycache__/
+*.pyc
