@@ -29,3 +29,6 @@
 # Python bytecode
 __pycache__/
 *.pyc
+
+# Enemy sprite pipeline intermediates (runtime uses demon_frames/frame_*.png)
+/game-v2/assets/art/enemies/demon_frames/aligned/

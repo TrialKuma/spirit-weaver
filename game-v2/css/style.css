@@ -445,7 +445,7 @@ body {
 
 /* 攻击前冲动画 */
 .character-box.lunge-right { animation: lungeRight 0.25s ease-out; }
-.enemy-box.lunge-left { animation: lungeLeft 0.25s ease-out; }
+.enemy-box.lunge-left { animation: lungeLeft 0.5s ease-in-out; }
 
 @keyframes lungeRight {
     0% { transform: translateX(0); }
@@ -455,7 +455,8 @@ body {
 
 @keyframes lungeLeft {
     0% { transform: translateX(0); }
-    30% { transform: translateX(-28px); }
+    25% { transform: translateX(-45vw); }
+    45% { transform: translateX(-45vw); }
     100% { transform: translateX(0); }
 }
 
@@ -1307,22 +1308,112 @@ body {
 }
 
 .enemy-box {
-    width: 120px;
-    height: 120px;
-    background: var(--bg-tertiary);
-    border: 3px solid var(--accent-secondary);
+    width: 200px;
+    height: 240px;
+    background: transparent;
+    border: none;
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
+    justify-content: flex-start;
     gap: 4px;
     font-size: 24px;
     position: relative;
 }
 
 .enemy-icon {
-    font-size: 36px;
-    line-height: 1;
+    width: 180px;
+    height: 180px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: visible;
+}
+
+.enemy-hp-top {
+    width: 160px;
+    height: 6px;
+    background: rgba(0,0,0,0.5);
+    border-radius: 3px;
+    position: relative;
+    overflow: hidden;
+}
+
+.enemy-hp-top .hp-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+}
+
+.enemy-hp-top .hp-bar-damage {
+    height: 100%;
+    position: absolute;
+    border-radius: 3px;
+}
+
+.enemy-hp-top .hp-bar-shield {
+    height: 100%;
+    position: absolute;
+    border-radius: 3px;
+}
+
+.player-hp-top {
+    width: 100%;
+    height: 8px;
+    background: rgba(0,0,0,0.5);
+    border-radius: 3px;
+    position: relative;
+    overflow: hidden;
+    margin-bottom: 4px;
+}
+
+.player-hp-top .hp-bar-fill,
+.player-hp-top .hp-bar-damage,
+.player-hp-top .hp-bar-shield {
+    height: 100%;
+    position: absolute;
+    border-radius: 3px;
+}
+
+.player-hp-top .hp-bar-text {
+    position: absolute;
+    width: 100%;
+    text-align: center;
+    font-size: 10px;
+    line-height: 8px;
+    color: white;
+    text-shadow: 0 0 3px black;
+}
+
+.player-stats-inline {
+    display: flex;
+    gap: 12px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    padding: 2px 8px;
+}
+
+.player-stats-inline span {
+    white-space: nowrap;
+}
+
+.enemy-icon img {
+    transition: filter 0.15s;
+    transform: scaleX(-1);
+}
+
+.enemy-box.enemy-windup .enemy-icon img {
+    filter: brightness(1.3) saturate(1.5) drop-shadow(0 0 8px rgba(180, 60, 255, 0.8));
+    animation: windupShake 0.08s infinite alternate;
+}
+
+@keyframes windupShake {
+    0% { transform: scaleX(-1) translateX(-2px) scale(1.03); }
+    100% { transform: scaleX(-1) translateX(2px) scale(1.03); }
+}
+
+.enemy-box.enemy-strike .enemy-icon img {
+    filter: brightness(1.8) saturate(2.0) drop-shadow(0 0 15px rgba(180, 60, 255, 1.0));
+    transform: scaleX(-1) scale(1.1);
 }
 
 .enemy-name-label {
@@ -3575,38 +3666,44 @@ body {
 
 /* 节点动画 */
 .map-node-pulse {
-    animation: mapNodePulse 1.5s ease-in-out infinite;
+    animation: mapNodePulse 2s ease-in-out infinite;
 }
 @keyframes mapNodePulse {
-    0%, 100% { opacity: 0.5; stroke-width: 2; }
-    50% { opacity: 1; stroke-width: 3; }
+    0%, 100% { opacity: 0.1; r: inherit; }
+    50% { opacity: 0.25; }
 }
 
 .map-node-available {
-    animation: mapNodeGlow 2s ease-in-out infinite;
+    animation: mapNodeGlow 2.5s ease-in-out infinite;
 }
 @keyframes mapNodeGlow {
-    0%, 100% { opacity: 0.3; }
-    50% { opacity: 0.8; }
+    0%, 100% { opacity: 0.5; }
+    50% { opacity: 1; }
 }
 
 .map-node-clickable {
     cursor: pointer;
 }
-.map-node-clickable image {
+.map-node-clickable circle,
+.map-node-clickable text {
     transition: filter 0.2s, opacity 0.2s;
 }
-.map-node-clickable:hover image {
-    filter: brightness(1.4) drop-shadow(0 0 10px rgba(0, 212, 255, 0.7));
+.map-node-clickable:hover circle:nth-child(2) {
+    stroke: #00d4ff !important;
+    stroke-width: 2.5 !important;
+    filter: drop-shadow(0 0 8px rgba(0, 212, 255, 0.6));
+}
+.map-node-clickable:hover text:first-of-type {
+    fill: #fff !important;
     opacity: 1 !important;
 }
 
 .map-edge-available {
-    animation: mapEdgePulse 2s ease-in-out infinite;
+    animation: mapEdgePulse 2.5s ease-in-out infinite;
 }
 @keyframes mapEdgePulse {
-    0%, 100% { stroke-opacity: 0.3; }
-    50% { stroke-opacity: 0.8; }
+    0%, 100% { stroke-opacity: 0.4; }
+    50% { stroke-opacity: 1; }
 }
 
 .map-close-btn {

@@ -109,7 +109,14 @@ function updateUI() {
         // 更新敌人名字和图标
         const enemyIconEl = document.getElementById('enemy-icon');
         const enemyNameEl = document.getElementById('enemy-name-label');
-        if (enemyIconEl) enemyIconEl.textContent = GameState.enemy.icon || '👾';
+        if (enemyIconEl) {
+            const spriteImg = enemyIconEl.querySelector('#enemy-sprite');
+            if (spriteImg) {
+                // 有序列帧图片时不覆盖，保留sprite
+            } else {
+                enemyIconEl.textContent = GameState.enemy.icon || '👾';
+            }
+        }
         if (enemyNameEl) enemyNameEl.textContent = GameState.enemy.name || '敌人';
 
         let curAtk = GameState.enemy.baseAtk || 8;

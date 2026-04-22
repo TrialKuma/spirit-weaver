@@ -93,44 +93,53 @@ const RunManager = {
             const curr = layers[L];
             const next = layers[L + 1];
 
-            // 每个当前节点至少连 1 个下层节点
-            curr.forEach(node => {
-                const idx = Math.floor(Math.random() * next.length);
-                if (!node.next.includes(next[idx].id)) {
-                    node.next.push(next[idx].id);
-                }
+            const _colPos = (col, layerLen) => layerLen <= 1 ? 0.5 : col / (layerLen - 1);
+
+            // 每个当前节点连到「列位置最近」的下层节点
+            curr.forEach(cNode => {
+                const cPos = _colPos(cNode.column, curr.length);
+                let bestDist = Infinity, bestIdx = 0;
+                next.forEach((nNode, i) => {
+                    const nPos = _colPos(nNode.column, next.length);
+                    const dist = Math.abs(cPos - nPos);
+                    if (dist < bestDist) { bestDist = dist; bestIdx = i; }
+                });
+                cNode.next.push(next[bestIdx].id);
             });
 
-            // 每个下层节点至少被 1 个上层连到
+            // 每个下层节点至少被 1 个上层连到（优先选最近的）
             next.forEach(nNode => {
-                const hasParent = curr.some(cNode => cNode.next.includes(nNode.id));
+                const hasParent = curr.some(c => c.next.includes(nNode.id));
                 if (!hasParent) {
-                    const idx = Math.floor(Math.random() * curr.length);
-                    curr[idx].next.push(nNode.id);
+                    const nPos = _colPos(nNode.column, next.length);
+                    let bestDist = Infinity, bestParent = curr[0];
+                    curr.forEach(c => {
+                        const cPos = _colPos(c.column, curr.length);
+                        const dist = Math.abs(cPos - nPos);
+                        if (dist < bestDist) { bestDist = dist; bestParent = c; }
+                    });
+                    bestParent.next.push(nNode.id);
                 }
             });
 
-            // 额外随机连线增加路径多样性（30% 概率每对多连一条）
+            // 少量额外连线：仅连相邻列位置的节点，15% 概率
             curr.forEach(cNode => {
                 next.forEach(nNode => {
-                    if (!cNode.next.includes(nNode.id) && Math.random() < 0.3) {
+                    if (cNode.next.includes(nNode.id)) return;
+                    const colDiff = Math.abs(cNode.column - nNode.column);
+                    if (colDiff <= 1 && Math.random() < 0.15) {
                         cNode.next.push(nNode.id);
                     }
                 });
             });
         }
 
-        // 去除过多交叉：对每层的连线按列排序减少交叉
-        for (let L = 0; L < layers.length - 1; L++) {
-            const curr = layers[L];
-            const next = layers[L + 1];
-            const nextIdxMap = {};
-            next.forEach((n, i) => { nextIdxMap[n.id] = i; });
-
-            curr.forEach(cNode => {
-                cNode.next.sort((a, b) => (nextIdxMap[a] || 0) - (nextIdxMap[b] || 0));
+        // 去重
+        layers.forEach(layer => {
+            layer.forEach(node => {
+                node.next = [...new Set(node.next)];
             });
-        }
+        });
     },
 
     _assignNodeTypes(layers, actNum) {
@@ -209,22 +218,33 @@ const RunManager = {
     _computePositions(layers) {
         const MAP_W = 1000;
         const MAP_H = 800;
-        const PAD_X = 100;
-        const PAD_Y = 70;
+        const PAD_X = 120;
+        const PAD_Y = 60;
         const usableW = MAP_W - PAD_X * 2;
         const usableH = MAP_H - PAD_Y * 2;
         const layerCount = layers.length;
+        const JITTER_X = 25;
+        const JITTER_Y = 10;
 
         layers.forEach((layer, L) => {
-            const y = PAD_Y + (L / (layerCount - 1)) * usableH;
+            const baseY = PAD_Y + (L / (layerCount - 1)) * usableH;
             const count = layer.length;
+            const isEndpoint = (L === 0 || L === layerCount - 1);
+
             layer.forEach((node, c) => {
                 if (count === 1) {
                     node.x = MAP_W / 2;
                 } else {
                     node.x = PAD_X + (c / (count - 1)) * usableW;
                 }
-                node.y = y;
+                node.y = baseY;
+
+                // 非首尾层加随机偏移
+                if (!isEndpoint) {
+                    node.x += (Math.random() - 0.5) * JITTER_X * 2;
+                    node.y += (Math.random() - 0.5) * JITTER_Y * 2;
+                    node.x = Math.max(PAD_X, Math.min(MAP_W - PAD_X, node.x));
+                }
             });
         });
     },

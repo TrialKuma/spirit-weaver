@@ -1,17 +1,24 @@
 // ==================== 地图渲染与交互 ====================
 
-const MAP_BG = {
+// 每幕背景：优先尝试图片，fallback 用渐变
+const MAP_BG_IMG = {
     1: 'assets/art/backgrounds/bg_map_act1_v2.png',
     2: 'assets/art/backgrounds/bg_map_act2_v2.png',
     3: 'assets/art/backgrounds/bg_map_act3_v2.png'
 };
+const MAP_BG_GRADIENT = {
+    1: 'radial-gradient(ellipse at 50% 80%, #0d1b2a 0%, #1b2838 40%, #0a0e17 100%)',
+    2: 'radial-gradient(ellipse at 50% 60%, #1a1208 0%, #2a1e0a 40%, #0e0a04 100%)',
+    3: 'radial-gradient(ellipse at 50% 40%, #150a20 0%, #1e0e30 40%, #0a0510 100%)'
+};
 
-const NODE_ICONS = {
-    battle: 'assets/art/icons/map_nodes/node_battle.png',
-    elite: 'assets/art/icons/map_nodes/node_elite.png',
-    rest: 'assets/art/icons/map_nodes/node_rest.png',
-    hammer: 'assets/art/icons/map_nodes/node_hammer.png',
-    boss: 'assets/art/icons/map_nodes/node_boss.png'
+// 节点符号（SVG 内联绘制，不依赖外部图片）
+const NODE_SYMBOLS = {
+    battle: '⚔',
+    elite: '☠',
+    rest: '♨',
+    hammer: '⚒',
+    boss: '👁'
 };
 
 const NODE_COLORS = {
@@ -78,11 +85,13 @@ function renderMap() {
     const progressEl = document.getElementById('map-progress');
     if (progressEl) progressEl.textContent = RunManager.getProgressText();
 
-    // 更新背景
+    // 更新背景（图片 + 渐变兜底）
     const panel = document.querySelector('.map-panel');
     if (panel) {
-        const bgUrl = MAP_BG[actMap.act] || MAP_BG[1];
-        panel.style.backgroundImage = `url('${bgUrl}')`;
+        const bgImg = MAP_BG_IMG[actMap.act] || MAP_BG_IMG[1];
+        const bgGrad = MAP_BG_GRADIENT[actMap.act] || MAP_BG_GRADIENT[1];
+        panel.style.backgroundImage = `url('${bgImg}'), ${bgGrad}`;
+        panel.style.backgroundColor = '#0a0a0a';
     }
 
     // 当前节点和可选下一步
@@ -118,6 +127,31 @@ function renderMap() {
     svg.setAttribute('height', '100%');
     svg.style.display = 'block';
 
+    // SVG defs: 发光滤镜 + 渐变
+    const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+
+    const glowFilter = document.createElementNS('http://www.w3.org/2000/svg', 'filter');
+    glowFilter.setAttribute('id', 'edge-glow');
+    glowFilter.setAttribute('x', '-20%');
+    glowFilter.setAttribute('y', '-20%');
+    glowFilter.setAttribute('width', '140%');
+    glowFilter.setAttribute('height', '140%');
+    const blur = document.createElementNS('http://www.w3.org/2000/svg', 'feGaussianBlur');
+    blur.setAttribute('stdDeviation', '3');
+    blur.setAttribute('result', 'glow');
+    glowFilter.appendChild(blur);
+    const merge = document.createElementNS('http://www.w3.org/2000/svg', 'feMerge');
+    const mn1 = document.createElementNS('http://www.w3.org/2000/svg', 'feMergeNode');
+    mn1.setAttribute('in', 'glow');
+    merge.appendChild(mn1);
+    const mn2 = document.createElementNS('http://www.w3.org/2000/svg', 'feMergeNode');
+    mn2.setAttribute('in', 'SourceGraphic');
+    merge.appendChild(mn2);
+    glowFilter.appendChild(merge);
+    defs.appendChild(glowFilter);
+
+    svg.appendChild(defs);
+
     // 绘制连线
     const edgeGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     actMap.layers.forEach(layer => {
@@ -126,34 +160,85 @@ function renderMap() {
                 const nextNode = actMap.nodeMap[nextId];
                 if (!nextNode) return;
 
-                const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
                 const dy = (nextNode.y - node.y) * 0.4;
                 const d = `M ${node.x} ${node.y} C ${node.x} ${node.y + dy}, ${nextNode.x} ${nextNode.y - dy}, ${nextNode.x} ${nextNode.y}`;
-                path.setAttribute('d', d);
-                path.setAttribute('fill', 'none');
-                path.setAttribute('stroke-width', '2');
-                path.setAttribute('stroke-linecap', 'round');
 
-                // 连线着色逻辑
                 const isOnPath = node.visited && nextNode.visited;
                 const isAvailable = node.visited && currentNode && node.id === currentNode.id && nextIds.has(nextId);
 
                 if (isOnPath) {
-                    path.setAttribute('stroke', 'rgba(255, 213, 79, 0.7)');
-                    path.setAttribute('stroke-width', '3');
-                } else if (isAvailable) {
-                    path.setAttribute('stroke', 'rgba(0, 212, 255, 0.5)');
-                    path.setAttribute('stroke-width', '2.5');
-                    path.classList.add('map-edge-available');
-                } else {
-                    path.setAttribute('stroke', 'rgba(255, 255, 255, 0.12)');
-                }
+                    // 已走过的路径：发光金线 + 底层宽光晕
+                    const glow = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                    glow.setAttribute('d', d);
+                    glow.setAttribute('fill', 'none');
+                    glow.setAttribute('stroke', 'rgba(255, 213, 79, 0.25)');
+                    glow.setAttribute('stroke-width', '8');
+                    glow.setAttribute('stroke-linecap', 'round');
+                    edgeGroup.appendChild(glow);
 
-                edgeGroup.appendChild(path);
+                    const line = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                    line.setAttribute('d', d);
+                    line.setAttribute('fill', 'none');
+                    line.setAttribute('stroke', 'rgba(255, 213, 79, 0.85)');
+                    line.setAttribute('stroke-width', '2.5');
+                    line.setAttribute('stroke-linecap', 'round');
+                    line.setAttribute('filter', 'url(#edge-glow)');
+                    edgeGroup.appendChild(line);
+                } else if (isAvailable) {
+                    // 可选路径：呼吸蓝光
+                    const glow = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                    glow.setAttribute('d', d);
+                    glow.setAttribute('fill', 'none');
+                    glow.setAttribute('stroke', 'rgba(0, 212, 255, 0.15)');
+                    glow.setAttribute('stroke-width', '6');
+                    glow.setAttribute('stroke-linecap', 'round');
+                    edgeGroup.appendChild(glow);
+
+                    const line = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                    line.setAttribute('d', d);
+                    line.setAttribute('fill', 'none');
+                    line.setAttribute('stroke', 'rgba(0, 212, 255, 0.6)');
+                    line.setAttribute('stroke-width', '2');
+                    line.setAttribute('stroke-linecap', 'round');
+                    line.setAttribute('filter', 'url(#edge-glow)');
+                    line.classList.add('map-edge-available');
+                    edgeGroup.appendChild(line);
+                } else {
+                    // 未探索：虚线
+                    const line = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                    line.setAttribute('d', d);
+                    line.setAttribute('fill', 'none');
+                    line.setAttribute('stroke', 'rgba(255, 255, 255, 0.1)');
+                    line.setAttribute('stroke-width', '1.5');
+                    line.setAttribute('stroke-linecap', 'round');
+                    line.setAttribute('stroke-dasharray', '6 4');
+                    edgeGroup.appendChild(line);
+                }
             });
         });
     });
     svg.appendChild(edgeGroup);
+
+    // 节点发光滤镜
+    const nodeGlowFilter = document.createElementNS('http://www.w3.org/2000/svg', 'filter');
+    nodeGlowFilter.setAttribute('id', 'node-glow');
+    nodeGlowFilter.setAttribute('x', '-50%');
+    nodeGlowFilter.setAttribute('y', '-50%');
+    nodeGlowFilter.setAttribute('width', '200%');
+    nodeGlowFilter.setAttribute('height', '200%');
+    const ngBlur = document.createElementNS('http://www.w3.org/2000/svg', 'feGaussianBlur');
+    ngBlur.setAttribute('stdDeviation', '4');
+    ngBlur.setAttribute('result', 'glow');
+    nodeGlowFilter.appendChild(ngBlur);
+    const ngMerge = document.createElementNS('http://www.w3.org/2000/svg', 'feMerge');
+    const ngMn1 = document.createElementNS('http://www.w3.org/2000/svg', 'feMergeNode');
+    ngMn1.setAttribute('in', 'glow');
+    ngMerge.appendChild(ngMn1);
+    const ngMn2 = document.createElementNS('http://www.w3.org/2000/svg', 'feMergeNode');
+    ngMn2.setAttribute('in', 'SourceGraphic');
+    ngMerge.appendChild(ngMn2);
+    nodeGlowFilter.appendChild(ngMerge);
+    defs.appendChild(nodeGlowFilter);
 
     // 绘制节点
     const nodeGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
@@ -163,81 +248,102 @@ function renderMap() {
             const isNext = nextIds.has(node.id);
             const isVisited = node.visited && !isCurrent;
 
-            const size = node.type === 'boss' ? MAP_RENDER.NODE_SIZE_BOSS : MAP_RENDER.NODE_SIZE;
-            const halfSize = size / 2;
+            const r = node.type === 'boss' ? MAP_RENDER.NODE_SIZE_BOSS / 2 : MAP_RENDER.NODE_SIZE / 2;
+            const color = NODE_COLORS[node.type] || '#ffd54f';
 
             const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
             g.setAttribute('transform', `translate(${node.x}, ${node.y})`);
             g.setAttribute('data-node-id', node.id);
 
-            // 节点状态样式
+            // 底层光晕（当前/可选节点）
             if (isCurrent) {
-                // 当前位置光晕
-                const glow = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-                glow.setAttribute('r', halfSize + 8);
-                glow.setAttribute('fill', 'none');
-                glow.setAttribute('stroke', NODE_COLORS[node.type] || '#ffd54f');
-                glow.setAttribute('stroke-width', '2');
-                glow.setAttribute('opacity', '0.8');
-                glow.classList.add('map-node-pulse');
-                g.appendChild(glow);
+                const outerGlow = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                outerGlow.setAttribute('r', r + 10);
+                outerGlow.setAttribute('fill', color);
+                outerGlow.setAttribute('opacity', '0.15');
+                outerGlow.setAttribute('filter', 'url(#node-glow)');
+                outerGlow.classList.add('map-node-pulse');
+                g.appendChild(outerGlow);
+            }
+            if (isNext && !_mapViewOnly) {
+                const outerGlow = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                outerGlow.setAttribute('r', r + 8);
+                outerGlow.setAttribute('fill', 'rgba(0, 212, 255, 0.08)');
+                outerGlow.setAttribute('stroke', 'rgba(0, 212, 255, 0.4)');
+                outerGlow.setAttribute('stroke-width', '1.5');
+                outerGlow.classList.add('map-node-available');
+                g.appendChild(outerGlow);
             }
 
-            if (isNext) {
-                // 可选节点外圈光晕
-                const glow = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-                glow.setAttribute('r', halfSize + 6);
-                glow.setAttribute('fill', 'none');
-                glow.setAttribute('stroke', 'rgba(0, 212, 255, 0.6)');
-                glow.setAttribute('stroke-width', '2');
-                glow.classList.add('map-node-available');
-                g.appendChild(glow);
-            }
-
-            // 节点图标
-            const icon = document.createElementNS('http://www.w3.org/2000/svg', 'image');
-            icon.setAttribute('href', NODE_ICONS[node.type] || NODE_ICONS.battle);
-            icon.setAttribute('x', -halfSize);
-            icon.setAttribute('y', -halfSize);
-            icon.setAttribute('width', size);
-            icon.setAttribute('height', size);
-
+            // 节点圆底
+            const bg = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            bg.setAttribute('r', r);
             if (isVisited) {
-                icon.setAttribute('opacity', '0.4');
-                icon.setAttribute('filter', 'grayscale(60%)');
-            } else if (!isCurrent && !isNext) {
-                icon.setAttribute('opacity', '0.35');
+                bg.setAttribute('fill', 'rgba(30, 30, 40, 0.6)');
+                bg.setAttribute('stroke', 'rgba(255, 255, 255, 0.15)');
+                bg.setAttribute('stroke-width', '1');
+            } else if (isCurrent) {
+                bg.setAttribute('fill', 'rgba(20, 20, 30, 0.85)');
+                bg.setAttribute('stroke', color);
+                bg.setAttribute('stroke-width', '2.5');
+                bg.setAttribute('filter', 'url(#node-glow)');
+            } else if (isNext) {
+                bg.setAttribute('fill', 'rgba(20, 20, 30, 0.8)');
+                bg.setAttribute('stroke', color);
+                bg.setAttribute('stroke-width', '1.5');
+            } else {
+                bg.setAttribute('fill', 'rgba(20, 20, 30, 0.5)');
+                bg.setAttribute('stroke', 'rgba(255, 255, 255, 0.1)');
+                bg.setAttribute('stroke-width', '1');
             }
+            g.appendChild(bg);
 
-            g.appendChild(icon);
+            // 节点符号
+            const symbol = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            symbol.setAttribute('text-anchor', 'middle');
+            symbol.setAttribute('dominant-baseline', 'central');
+            symbol.setAttribute('font-size', node.type === 'boss' ? '28' : '20');
+            symbol.setAttribute('fill', isVisited ? 'rgba(255,255,255,0.3)' : color);
+            symbol.textContent = NODE_SYMBOLS[node.type] || NODE_SYMBOLS.battle;
+            if (!isVisited && !isCurrent && !isNext) {
+                symbol.setAttribute('opacity', '0.4');
+            }
+            g.appendChild(symbol);
 
-            // 已完成标记
+            // 已完成对勾
             if (isVisited) {
                 const check = document.createElementNS('http://www.w3.org/2000/svg', 'text');
                 check.setAttribute('text-anchor', 'middle');
                 check.setAttribute('dominant-baseline', 'central');
-                check.setAttribute('fill', '#ffd54f');
-                check.setAttribute('font-size', '16');
-                check.setAttribute('opacity', '0.8');
+                check.setAttribute('y', '-2');
+                check.setAttribute('fill', 'rgba(255, 213, 79, 0.7)');
+                check.setAttribute('font-size', '14');
                 check.textContent = '✓';
                 g.appendChild(check);
             }
 
             // 节点标签
             const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-            label.setAttribute('y', halfSize + 14);
+            label.setAttribute('y', r + 16);
             label.setAttribute('text-anchor', 'middle');
-            label.setAttribute('fill', isNext ? '#e0e0e0' : (isCurrent ? NODE_COLORS[node.type] : 'rgba(224, 224, 224, 0.4)'));
             label.setAttribute('font-size', '11');
             label.setAttribute('font-family', 'inherit');
+            if (isVisited) {
+                label.setAttribute('fill', 'rgba(224, 224, 224, 0.3)');
+            } else if (isCurrent) {
+                label.setAttribute('fill', color);
+            } else if (isNext) {
+                label.setAttribute('fill', '#e0e0e0');
+            } else {
+                label.setAttribute('fill', 'rgba(224, 224, 224, 0.25)');
+            }
             label.textContent = node.label;
             g.appendChild(label);
 
-            // 可选节点的交互（仅非只读模式）
+            // 可选节点的交互
             if (isNext && !_mapViewOnly) {
-                // 透明点击区域，比图标大一圈，避免边缘闪烁
                 const hitArea = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-                hitArea.setAttribute('r', halfSize + 10);
+                hitArea.setAttribute('r', r + 12);
                 hitArea.setAttribute('fill', 'transparent');
                 hitArea.setAttribute('stroke', 'none');
                 g.appendChild(hitArea);
@@ -248,21 +354,15 @@ function renderMap() {
                 let hoverPlayed = false;
                 g.addEventListener('click', () => {
                     if (typeof AudioManager !== 'undefined') AudioManager.playUi('confirm');
-                    if (_mapOnNodeChosen) {
-                        _mapOnNodeChosen(node.id);
-                    }
+                    if (_mapOnNodeChosen) _mapOnNodeChosen(node.id);
                 });
-
                 g.addEventListener('mouseenter', () => {
                     if (!hoverPlayed) {
                         hoverPlayed = true;
                         if (typeof AudioManager !== 'undefined') AudioManager.playUi('hover');
                     }
                 });
-
-                g.addEventListener('mouseleave', () => {
-                    hoverPlayed = false;
-                });
+                g.addEventListener('mouseleave', () => { hoverPlayed = false; });
             }
 
             nodeGroup.appendChild(g);

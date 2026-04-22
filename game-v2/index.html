@@ -129,6 +129,14 @@
                     <div class="spirit-frame-status" id="spirit-frame-status"></div>
                 </div>
                 <div class="character-box" id="player-box">
+                    <div class="player-hp-top" id="player-hp-container">
+                        <div class="hp-bar-damage" id="player-hp-damage" style="width: 100%"></div>
+                        <div class="hp-bar-fill" id="player-hp-bar" style="width: 100%"></div>
+                        <div class="hp-bar-shield" id="player-shield-bar" style="display: none"></div>
+                        <div class="hp-bar-text">
+                            <span id="player-hp">100</span>/<span id="player-max-hp">100</span>
+                        </div>
+                    </div>
                     <img class="player-portrait" id="player-portrait" alt="" draggable="false" />
                     <div class="player-label" id="player-label">玩家</div>
                     <div class="spirit-orbit" id="spirit-orbit">
@@ -137,39 +145,26 @@
                     <div class="resonance-line" id="resonance-line"></div>
                     <div class="buff-bar" id="player-buff-bar"></div>
                 </div>
-                <div style="display: flex; flex-direction: column; gap: 5px; font-size: 14px; min-width: 160px;">
-                    <div class="hp-bar-container" id="player-hp-container">
-                        <div class="hp-bar-damage" id="player-hp-damage" style="width: 100%"></div>
-                        <div class="hp-bar-fill" id="player-hp-bar" style="width: 100%"></div>
-                        <div class="hp-bar-shield" id="player-shield-bar" style="display: none"></div>
-                        <div class="hp-bar-text">
-                            <span id="player-hp">100</span>/<span id="player-max-hp">100</span>
-                        </div>
-                    </div>
-                    <div>攻击: <span id="player-atk">10</span></div>
-                    <div>防御: <span id="player-def">5</span></div>
-                    <div>速度: <span id="player-speed">100</span></div>
-                </div>
             </div>
 
             <div class="enemy-area">
                 <div class="enemy-box" id="enemy-box">
-                    <div class="enemy-icon" id="enemy-icon">👾</div>
-                    <div class="enemy-name-label" id="enemy-name-label">敌人</div>
-                    <div class="buff-bar" id="enemy-buff-bar"></div>
-                </div>
-                <div style="display: flex; flex-direction: column; gap: 5px; font-size: 14px; min-width: 160px;">
-                    <div class="hp-bar-container" id="enemy-hp-container">
+                    <div class="enemy-hp-top" id="enemy-hp-container">
                         <div class="hp-bar-damage" id="enemy-hp-damage" style="width: 100%"></div>
                         <div class="hp-bar-fill enemy" id="enemy-hp-bar" style="width: 100%"></div>
                         <div class="hp-bar-shield" id="enemy-shield-bar" style="display: none"></div>
-                        <div class="hp-bar-text">
-                            <span id="enemy-hp">100</span>/<span id="enemy-max-hp">100</span>
-                        </div>
                     </div>
-                    <div>攻击: <span id="enemy-atk">8</span></div>
-                    <div>防御: <span id="enemy-def">3</span></div>
-                    <div>速度: <span id="enemy-speed">80</span></div>
+                    <div class="enemy-name-label" id="enemy-name-label">敌人</div>
+                    <div class="enemy-icon" id="enemy-icon">
+                        <img id="enemy-sprite" src="assets/art/enemies/demon_frames/frame_00.png" 
+                             style="width:100%;height:100%;object-fit:contain;" />
+                    </div>
+                    <div class="buff-bar" id="enemy-buff-bar"></div>
+                </div>
+                <!-- 隐藏的属性span，保留给JS读取但不显示 -->
+                <div style="display:none;">
+                    <span id="enemy-hp">100</span><span id="enemy-max-hp">100</span>
+                    <span id="enemy-atk">8</span><span id="enemy-def">3</span><span id="enemy-speed">80</span>
                 </div>
             </div>
 
@@ -185,6 +180,11 @@
         <div class="bottom-panel">
             <div class="resource-panel" id="resource-panel">
                 <!-- 动态生成资源显示 -->
+                <div class="player-stats-inline" id="player-stats-inline">
+                    <span>ATK <span id="player-atk">10</span></span>
+                    <span>DEF <span id="player-def">5</span></span>
+                    <span>SPD <span id="player-speed">100</span></span>
+                </div>
             </div>
             <div class="skills-panel" id="skills-panel">
                 <!-- 动态生成技能卡片 -->

@@ -648,6 +648,73 @@ function gameLoop() {
     requestAnimationFrame(gameLoop);
 }
 
+// ===== 敌人序列帧动画系统 =====
+const EnemySpriteAnim = {
+    basePath: 'assets/art/enemies/demon_frames/',
+    idleFrame: 0,
+    // 动作帧映射：第一行0-3=待机/移动，第二行4-7=攻击序列，第三行8-11=其他
+    sequences: {
+        idle:   [0],
+        windup: [2, 3],       // 前摇：待机姿态渐进（04已去掉，用02/03的攻击准备姿态）
+        strike: [5, 6],       // 攻击：弧形挥砍→砸地爆发（04举刀、07前刺已去掉）
+        hit:    [8],          // 受击（09已去掉）
+        recover:[10, 11, 0],  // 恢复→待机
+    },
+    _timer: null,
+
+    setFrame(frameIdx) {
+        const sprite = document.getElementById('enemy-sprite');
+        if (sprite) sprite.src = this.basePath + `frame_${String(frameIdx).padStart(2,'0')}.png`;
+    },
+
+    playSequence(name, opts = {}) {
+        const seq = this.sequences[name];
+        if (!seq) return Promise.resolve();
+        const frameDuration = opts.frameDuration || 150;
+        const loops = opts.loops || 1;
+        const enemyBox = document.getElementById('enemy-box');
+
+        return new Promise(resolve => {
+            let i = 0;
+            const totalFrames = seq.length * loops;
+            if (this._timer) clearInterval(this._timer);
+
+            if (opts.cssClass && enemyBox) enemyBox.classList.add(opts.cssClass);
+
+            this._timer = setInterval(() => {
+                if (i >= totalFrames) {
+                    clearInterval(this._timer);
+                    this._timer = null;
+                    if (opts.cssClass && enemyBox) enemyBox.classList.remove(opts.cssClass);
+                    resolve();
+                    return;
+                }
+                this.setFrame(seq[i % seq.length]);
+                i++;
+            }, frameDuration);
+        });
+    },
+
+    async playAttack() {
+        // 前摇：蓄力帧循环3次（约900ms）
+        await this.playSequence('windup', { frameDuration: 150, loops: 3, cssClass: 'enemy-windup' });
+        // 出招：攻击帧
+        await this.playSequence('strike', { frameDuration: 120, loops: 1, cssClass: 'enemy-strike' });
+        // 回待机
+        this.setFrame(this.idleFrame);
+    },
+
+    async playHit() {
+        await this.playSequence('hit', { frameDuration: 120, loops: 1 });
+        await this.playSequence('recover', { frameDuration: 150, loops: 1 });
+    },
+
+    reset() {
+        if (this._timer) clearInterval(this._timer);
+        this.setFrame(this.idleFrame);
+    }
+};
+
 // 敌人回合
 function enemyTurn(enemy) {
     // 暂停行动条
@@ -663,7 +730,141 @@ function enemyTurn(enemy) {
             return;
         }
     }
-    
+
+    // 判断是否为攻击类行动
+    let actionType = 'attack';
+    if (enemy.nextAction) actionType = enemy.nextAction.type;
+    const isAttack = (actionType === 'attack' || actionType === 'charge');
+
+    if (isAttack) {
+        // ===== 攻击类：前摇喊话 → 出招帧+冲刺同时出伤 → 回来 =====
+        const actionDesc = (enemy.nextAction && enemy.nextAction.desc) || '';
+        let cutinSkillName = actionDesc.split('！')[0] || actionDesc.split('，')[0] || actionType;
+        if (cutinSkillName.length > 6) cutinSkillName = cutinSkillName.substring(0, 6);
+        const cutinIcon = (enemy.icon) || '👾';
+        const cutinColor = getEnemyActionColor(actionType);
+
+        // 1. 前摇开始时立刻喊话
+        ParticleSystem.showSkillCutIn({
+            side: 'right',
+            icon: cutinIcon,
+            skillName: cutinSkillName,
+            color: cutinColor,
+            duration: 800
+        });
+
+        // 2. 同时播前摇帧动画
+        EnemySpriteAnim.playSequence('windup', { frameDuration: 150, loops: 3, cssClass: 'enemy-windup' }).then(() => {
+            // 3. 前摇结束 → 执行伤害（数据层）
+            let result = { damage: 0 };
+            const playerShieldBefore = (GameState.player && GameState.player.shield) || 0;
+            if (enemy.executeAction) {
+                result = enemy.executeAction(GameState.player);
+            } else {
+                if (GameState.player) {
+                    const damage = enemy.baseAtk;
+                    GameState.player.takeDamage(damage);
+                    result.damage = damage;
+                }
+            }
+
+            // 4. 出招帧 + 冲刺 + 命中特效同时播放
+            EnemySpriteAnim.playSequence('strike', { frameDuration: 120, loops: 1, cssClass: 'enemy-strike' });
+
+            const enemyBoxEl = document.getElementById('enemy-box');
+            const playerBox = document.getElementById('player-box');
+            if (enemyBoxEl) {
+                enemyBoxEl.style.transition = 'transform 0.15s ease-in';
+                enemyBoxEl.style.transform = 'translateX(-45vw)';
+                setTimeout(() => {
+                    enemyBoxEl.style.transition = 'transform 0.35s ease-out';
+                    enemyBoxEl.style.transform = '';
+                    setTimeout(() => { enemyBoxEl.style.transition = ''; }, 400);
+                }, 300);
+            }
+
+            // 5. 冲到位时播命中特效
+            setTimeout(() => {
+                const pPos = getUnitCenter('player-box');
+                if (result.damage > 0 && GameState.player) {
+                    if (typeof SFX !== 'undefined') SFX.hit();
+                    if (pPos) {
+                        ParticleSystem.showDamageNumber(pPos.x, pPos.y - 20, result.damage, '#ff6b9d');
+                        const impactType = actionType === 'charge' ? 'charge' : 'enemy';
+                        ParticleSystem.createImpact(pPos.x, pPos.y, impactType);
+                        const slashType = actionType === 'charge' ? 'heavy' : 'light';
+                        ParticleSystem.createSlash(pPos.x, pPos.y, slashType);
+                    }
+                    const hpRatio = result.damage / GameState.player.maxHp;
+                    if (hpRatio >= 0.25 || actionType === 'charge') {
+                        ParticleSystem.shakeScreen(10, 350);
+                        ParticleSystem.flashScreen('rgba(255, 50, 50, 0.3)', 100);
+                    } else if (hpRatio >= 0.1) {
+                        ParticleSystem.shakeScreen(5, 200);
+                        ParticleSystem.flashScreen('rgba(255, 80, 80, 0.15)', 80);
+                    } else {
+                        ParticleSystem.shakeScreen(3, 120);
+                    }
+                    if (playerBox) {
+                        playerBox.classList.remove('hit-flash', 'knockback-left', 'knockback-left-heavy');
+                        void playerBox.offsetWidth;
+                        playerBox.classList.add('hit-flash');
+                        playerBox.classList.add(actionType === 'charge' ? 'knockback-left-heavy' : 'knockback-left');
+                        setTimeout(() => playerBox.classList.remove('hit-flash', 'knockback-left', 'knockback-left-heavy'), 400);
+                    }
+                    shakeHpBar('player-hp-container', result.damage, GameState.player.maxHp);
+                    const playerShieldAfter = (GameState.player && GameState.player.shield) || 0;
+                    if (playerShieldBefore > 0 && playerShieldAfter <= 0 && pPos) {
+                        ParticleSystem.createImpact(pPos.x, pPos.y, 'light', '#64b5f6');
+                        ParticleSystem.flashScreen('rgba(100, 181, 246, 0.25)', 100);
+                        ParticleSystem.showDamageNumber(pPos.x, pPos.y - 50, '护盾破碎!', '#64b5f6', null, { holdMs: 500, fadeMs: 1000, floatDistance: 25 });
+                    }
+                }
+                updateUI();
+
+                // 6. 回待机 + 结束回合
+                setTimeout(() => {
+                    EnemySpriteAnim.setFrame(EnemySpriteAnim.idleFrame);
+                    _finishEnemyTurn(enemy);
+                }, 400);
+            }, 130); // 冲刺动画25%时命中（500ms * 0.25 ≈ 130ms）
+        });
+    } else {
+        _executeEnemyAction(enemy);
+    }
+}
+
+function _finishEnemyTurn(enemy) {
+    if (GameState.player && GameState.player.hp <= 0) {
+        setTimeout(() => { gameOver(); }, 800);
+        return;
+    }
+    setTimeout(() => {
+        setActiveTurn(null);
+        if (enemy.updateBuffs) {
+            enemy.updateBuffs();
+            updateBuffBars();
+        }
+        updateBuffBars();
+        if (enemy.planNextAction) {
+            enemy.planNextAction();
+            Logger.log(`${enemy.name} 意图：${enemy.nextAction.desc}`);
+            updateUI();
+        }
+        ctbSystem.resetAV(enemy);
+        GameState.isPaused = false;
+        GameState.turnCount++;
+        const turnCountEl = document.getElementById('turn-count');
+        if (turnCountEl) turnCountEl.textContent = GameState.turnCount;
+        GameEvents.emit('turnEnd', { unit: enemy });
+        if (GameState.spirit && GameState.spirit.onTurnEnd) {
+            GameState.spirit.onTurnEnd({ unit: enemy });
+        }
+        maybeOfferUpgrades();
+    }, 600);
+}
+
+function _executeEnemyAction(enemy) {    
     // 执行意图（伤害结算）
     let result = { damage: 0 };
     let actionType = 'attack';
@@ -901,24 +1102,9 @@ function enemyTurn(enemy) {
         }, 1300);
     }
 
-    // ===== 主时序：攻击类行为先播 cut-in → 再播 VFX → 结束；非攻击类直接播表现 → 结束 =====
-    if (needsCutIn) {
-        ParticleSystem.showSkillCutIn({
-            side: 'right',
-            icon: cutinIcon,
-            skillName: cutinSkillName,
-            color: cutinColor,
-            duration: cutinDuration
-        }, () => {
-            // cut-in 结束后播放攻击 VFX
-            playEnemyAttackVFX();
-            finishEnemyTurn();
-        });
-    } else {
-        // 非攻击行为：即时表现已在上面播放完毕
-        updateUI();
-        finishEnemyTurn();
-    }
+    // ===== 非攻击行为：即时表现已在上面播放完毕，直接结束 =====
+    updateUI();
+    _finishEnemyTurn(enemy);
 }
 
 // 魂灵回合（自律型 或 手操型）
@@ -1380,13 +1566,14 @@ function usePlayerSkill(skillId) {
                 // 敌人受击音效（非暴击时，暴击已有 crit 音效）
                 if (!isCrit && typeof SFX !== 'undefined') SFX.hit();
                 
-                // 敌人框体受击闪红 + 击退
+                // 敌人框体受击闪红 + 击退 + 受击帧
                 enemyBox.classList.remove('hit-flash', 'knockback-right', 'knockback-right-heavy');
                 void enemyBox.offsetWidth;
                 enemyBox.classList.add('hit-flash');
                 const isHeavyKnockback = tags.includes('Heavy') || tags.includes('Ultimate') || isCrit;
                 enemyBox.classList.add(isHeavyKnockback ? 'knockback-right-heavy' : 'knockback-right');
                 setTimeout(() => enemyBox.classList.remove('hit-flash', 'knockback-right', 'knockback-right-heavy'), 400);
+                if (typeof EnemySpriteAnim !== 'undefined') EnemySpriteAnim.playHit();
                 
                 shakeHpBar('enemy-hp-container', finalHitDmg, GameState.enemy.maxHp || 1);
                 
