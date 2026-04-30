@@ -4,8 +4,6 @@
 /.cursorrules
 
 # Non-code project artifacts
-/doc/
-/Spirit_Weaver_设计文档.md
 /simulate_balance.py
 /Untitled
 /未命名.md
@@ -22,9 +20,6 @@
 /simulate_builds.py
 /simulate_detail.py
 /simulate_new_balance.py
-
-# In-repo design notes for artists (keep locally, do not ship)
-/game-v2/doc/
 
 # Python bytecode
 __pycache__/
