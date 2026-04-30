@@ -1,0 +1,916 @@
+:root {
+    --bg-primary: #0a0a0a;
+    --bg-secondary: #1a1a2e;
+    --bg-tertiary: #16213e;
+    --surface-raised: rgba(8, 12, 22, 0.78);
+    --surface-border: rgba(255, 255, 255, 0.08);
+    --text-primary: #e0e0e0;
+    --text-secondary: #a0a0a0;
+    --accent-primary: #00d4ff;
+    --accent-secondary: #ff0055;
+    --accent-tertiary: #00ff88;
+    --accent-warm: #ffb703;
+    --warning: #ff8f3d;
+    --danger: #ff5b5b;
+    --shadow-strong: 0 18px 40px rgba(0, 0, 0, 0.4);
+}
+
+* {
+    box-sizing: border-box;
+}
+
+html,
+body {
+    margin: 0;
+    min-height: 100%;
+    font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+}
+
+body {
+    overflow: hidden;
+}
+
+button {
+    font: inherit;
+}
+
+#battle-stage {
+    position: relative;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    min-height: 100vh;
+    overflow: hidden;
+    isolation: isolate;
+}
+
+#battle-bg {
+    position: absolute;
+    inset: 0;
+    background:
+        linear-gradient(180deg, rgba(0, 0, 0, 0.28), rgba(0, 0, 0, 0.74)),
+        radial-gradient(circle at 50% 48%, rgba(22, 33, 62, 0.14), rgba(10, 10, 10, 0.76)),
+        url("../../game-v2/assets/art/backgrounds/battle/bg_stage_1.png") center center / cover no-repeat;
+    transform: scale(1.04);
+}
+
+#battle-stage::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background:
+        linear-gradient(90deg, rgba(3, 10, 20, 0.62), transparent 32%, transparent 68%, rgba(30, 5, 14, 0.62)),
+        linear-gradient(180deg, rgba(0, 0, 0, 0.2), transparent 20%, transparent 78%, rgba(0, 0, 0, 0.5));
+    pointer-events: none;
+}
+
+#vfx-layer {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 5;
+}
+
+.status-strip,
+.battle-field,
+#skill-band,
+.log-shell {
+    position: relative;
+    z-index: 10;
+}
+
+.status-strip {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 10px 16px 6px;
+}
+
+.status-cluster {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+
+.status-label {
+    color: var(--text-secondary);
+    font-size: 12px;
+    text-transform: uppercase;
+}
+
+.status-value {
+    font-size: 13px;
+    color: var(--text-primary);
+}
+
+.hud-button {
+    width: 38px;
+    height: 38px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(8, 12, 22, 0.7);
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+}
+
+.hud-button:hover {
+    transform: translateY(-1px);
+    border-color: rgba(0, 212, 255, 0.45);
+    background: rgba(13, 20, 35, 0.9);
+}
+
+.battle-field {
+    display: grid;
+    grid-template-columns: minmax(280px, 1fr) minmax(280px, 1fr);
+    align-items: stretch;
+    gap: 18px;
+    padding: 10px 18px 14px;
+    min-height: 0;
+}
+
+#player-area,
+#enemy-area {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    min-width: 0;
+}
+
+#enemy-area {
+    flex-direction: row-reverse;
+}
+
+.sprite-shell {
+    position: relative;
+    flex: 1 1 50%;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    min-height: 0;
+}
+
+.sprite-aura {
+    position: absolute;
+    inset: auto 12% 4% 12%;
+    height: 24%;
+    filter: blur(30px);
+    opacity: 0.75;
+}
+
+.player-aura {
+    background: rgba(0, 212, 255, 0.28);
+}
+
+.enemy-aura {
+    background: rgba(255, 0, 85, 0.24);
+}
+
+.sprite-frame {
+    position: relative;
+    width: min(100%, 400px);
+    aspect-ratio: 4 / 5;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    padding: 10px;
+}
+
+.enemy-frame {
+    width: min(100%, 360px);
+}
+
+.sprite-image {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    object-position: bottom center;
+    user-select: none;
+    filter: drop-shadow(0 18px 28px rgba(0, 0, 0, 0.5));
+    transition: transform 0.18s ease, filter 0.18s ease;
+}
+
+.sprite-image.casting {
+    transform: translateY(-6px) scale(1.02);
+    filter: drop-shadow(0 0 18px rgba(0, 212, 255, 0.6));
+}
+
+.sprite-image.enemy-telegraphing {
+    transform: translateY(-4px) scale(1.015);
+    filter: drop-shadow(0 0 20px rgba(255, 143, 61, 0.72));
+}
+
+.sprite-image.hit {
+    animation: hitFlash 0.28s ease;
+}
+
+@keyframes hitFlash {
+    0% { transform: translateX(0); opacity: 1; }
+    25% { transform: translateX(-8px); opacity: 0.88; }
+    50% { transform: translateX(8px); opacity: 1; }
+    100% { transform: translateX(0); opacity: 1; }
+}
+
+.combat-hud {
+    width: min(360px, 42%);
+    padding: 14px;
+    border: 1px solid var(--surface-border);
+    border-radius: 8px;
+    background: var(--surface-raised);
+    box-shadow: var(--shadow-strong);
+    backdrop-filter: blur(12px);
+}
+
+.enemy-panel {
+    text-align: right;
+}
+
+.hud-title-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 16px;
+}
+
+.combatant-name {
+    font-size: 19px;
+    font-weight: 700;
+}
+
+.combatant-subtitle {
+    margin-top: 4px;
+    color: var(--text-secondary);
+    font-size: 13px;
+}
+
+.pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 48px;
+    height: 24px;
+    padding: 0 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.pill-player {
+    background: rgba(0, 212, 255, 0.14);
+    color: var(--accent-primary);
+}
+
+.pill-enemy {
+    background: rgba(255, 0, 85, 0.14);
+    color: #ff8ab0;
+}
+
+.bar-block + .bar-block,
+.resource-block {
+    margin-top: 14px;
+}
+
+.bar-meta {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 8px;
+    color: var(--text-secondary);
+    font-size: 13px;
+}
+
+.enemy-panel .bar-meta {
+    justify-content: space-between;
+}
+
+.bar-track {
+    position: relative;
+    height: 16px;
+    border-radius: 999px;
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.bar-fill {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 100%;
+    border-radius: inherit;
+    transition: width 0.12s linear;
+}
+
+.hp-fill {
+    background: linear-gradient(90deg, #15cf8a, #8cffc4);
+}
+
+.enemy-fill {
+    background: linear-gradient(90deg, #ff3d6e, #ff8f88);
+}
+
+.bar-glow {
+    position: absolute;
+    inset: 0;
+    opacity: 0.35;
+}
+
+.player-glow {
+    background: linear-gradient(90deg, rgba(0, 212, 255, 0.6), transparent);
+}
+
+.enemy-glow {
+    background: linear-gradient(90deg, rgba(255, 0, 85, 0.65), transparent);
+}
+
+.resource-grid {
+    display: grid;
+    grid-template-columns: repeat(10, minmax(0, 1fr));
+    gap: 6px;
+    height: 18px;
+}
+
+.resource-cell {
+    position: relative;
+    overflow: hidden;
+    border-radius: 5px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.resource-cell-fill {
+    position: absolute;
+    inset: 0 0 0 0;
+    transform-origin: left center;
+    background: linear-gradient(90deg, rgba(0, 212, 255, 0.6), rgba(255, 183, 3, 0.88));
+    box-shadow: 0 0 10px rgba(0, 212, 255, 0.24);
+    transition: transform 0.12s linear;
+}
+
+.buff-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 16px;
+    min-height: 30px;
+}
+
+.enemy-buffs {
+    justify-content: flex-end;
+}
+
+.buff-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 28px;
+    padding: 0 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: var(--text-primary);
+}
+
+.buff-chip.debuff {
+    border-color: rgba(255, 0, 85, 0.3);
+    color: #ffc2d5;
+}
+
+.buff-chip.buff {
+    border-color: rgba(0, 255, 136, 0.3);
+    color: #bcffd8;
+}
+
+.state-badge {
+    position: absolute;
+    left: 16px;
+    bottom: 18px;
+    display: inline-flex;
+    align-items: center;
+    min-height: 30px;
+    padding: 0 12px;
+    border-radius: 999px;
+    background: rgba(8, 12, 22, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.32);
+    font-size: 12px;
+    color: var(--text-primary);
+}
+
+.enemy-state {
+    left: auto;
+    right: 16px;
+}
+
+.telegraph {
+    margin-top: 14px;
+    padding: 12px;
+    border-radius: 8px;
+    background: rgba(255, 143, 61, 0.08);
+    border: 1px solid rgba(255, 143, 61, 0.24);
+    transition: opacity 0.12s ease, transform 0.12s ease;
+}
+
+.telegraph.hidden {
+    opacity: 0;
+    transform: translateY(-6px);
+    pointer-events: none;
+}
+
+.telegraph.safe {
+    background: rgba(0, 255, 136, 0.08);
+    border-color: rgba(0, 255, 136, 0.26);
+}
+
+.telegraph.danger {
+    background: rgba(255, 91, 91, 0.1);
+    border-color: rgba(255, 91, 91, 0.28);
+}
+
+.telegraph-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 10px;
+    font-size: 13px;
+}
+
+.telegraph-label {
+    color: var(--text-secondary);
+}
+
+.telegraph-bar {
+    height: 8px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.telegraph-fill {
+    height: 100%;
+    width: 0;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #ff8f3d, #ffd166);
+    transition: width 0.08s linear;
+}
+
+.telegraph.danger .telegraph-fill {
+    background: linear-gradient(90deg, #ff5b5b, #ff0055);
+}
+
+.telegraph.safe .telegraph-fill {
+    background: linear-gradient(90deg, #1cd39e, #9af7d5);
+}
+
+#skill-band {
+    padding: 8px 16px 14px;
+    background: linear-gradient(180deg, rgba(6, 10, 20, 0.08), rgba(6, 10, 20, 0.68));
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.skill-band-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    margin-bottom: 8px;
+}
+
+.skill-bar {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.skill-button {
+    position: relative;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 10px;
+    min-height: 88px;
+    padding: 10px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(8, 12, 22, 0.82);
+    color: var(--text-primary);
+    cursor: pointer;
+    overflow: hidden;
+    transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease, opacity 0.15s ease;
+}
+
+.skill-button:hover {
+    transform: translateY(-2px);
+    border-color: rgba(0, 212, 255, 0.34);
+}
+
+.skill-button.available {
+    box-shadow: inset 0 0 0 1px rgba(0, 212, 255, 0.12), 0 0 24px rgba(0, 212, 255, 0.1);
+}
+
+.skill-button.casting {
+    border-color: rgba(255, 183, 3, 0.42);
+    box-shadow: inset 0 0 0 1px rgba(255, 183, 3, 0.16), 0 0 26px rgba(255, 183, 3, 0.16);
+}
+
+.skill-button.recovering,
+.skill-button.locked {
+    opacity: 0.68;
+}
+
+.skill-button.insufficient {
+    opacity: 0.5;
+    filter: grayscale(0.22);
+}
+
+.skill-progress {
+    position: absolute;
+    inset: auto 0 0 0;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.skill-progress-fill {
+    width: 0;
+    height: 100%;
+    background: linear-gradient(90deg, rgba(0, 212, 255, 0.88), rgba(255, 183, 3, 0.92));
+    transition: width 0.08s linear;
+}
+
+.skill-button.recovering .skill-progress-fill {
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0.48), rgba(0, 212, 255, 0.8));
+}
+
+.skill-hotkey {
+    width: 28px;
+    height: 28px;
+    border-radius: 7px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text-primary);
+    font-weight: 700;
+}
+
+.skill-body {
+    min-width: 0;
+}
+
+.skill-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+
+.skill-type-icon {
+    width: 26px;
+    height: 26px;
+    border-radius: 7px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.08);
+    font-size: 14px;
+}
+
+.skill-name {
+    font-size: 16px;
+    font-weight: 700;
+}
+
+.skill-desc {
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.35;
+}
+
+.skill-side {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 8px;
+    text-align: right;
+}
+
+.skill-cost {
+    color: var(--accent-warm);
+    font-size: 12px;
+}
+
+.skill-timing {
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+.log-shell {
+    position: absolute;
+    top: 74px;
+    right: 18px;
+    width: min(360px, calc(100vw - 36px));
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.log-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 38px;
+    padding: 0 14px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(8, 12, 22, 0.84);
+    color: var(--text-primary);
+    cursor: pointer;
+}
+
+.log-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 230px;
+    overflow: auto;
+    padding: 12px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(8, 12, 22, 0.76);
+    box-shadow: var(--shadow-strong);
+}
+
+.log-panel.collapsed {
+    display: none;
+}
+
+.log-entry {
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.04);
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--text-primary);
+}
+
+.log-entry.player {
+    border-left: 3px solid rgba(0, 212, 255, 0.8);
+}
+
+.log-entry.enemy {
+    border-left: 3px solid rgba(255, 0, 85, 0.8);
+}
+
+.log-entry.buff {
+    border-left: 3px solid rgba(0, 255, 136, 0.8);
+}
+
+.log-entry.warning {
+    border-left: 3px solid rgba(255, 183, 3, 0.86);
+}
+
+.overlay {
+    position: absolute;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgba(0, 0, 0, 0.56);
+    backdrop-filter: blur(10px);
+    z-index: 20;
+}
+
+.overlay.visible {
+    display: flex;
+}
+
+.overlay.hidden {
+    display: none;
+}
+
+.overlay-panel {
+    width: min(460px, 100%);
+    padding: 28px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(8, 12, 22, 0.9);
+    box-shadow: var(--shadow-strong);
+}
+
+.overlay-kicker {
+    color: var(--accent-primary);
+    font-size: 13px;
+    margin-bottom: 10px;
+}
+
+.overlay-panel h1,
+.overlay-panel h2 {
+    margin: 0 0 10px;
+    font-size: 30px;
+}
+
+.overlay-panel p {
+    margin: 0 0 22px;
+    color: var(--text-secondary);
+    line-height: 1.6;
+}
+
+.overlay-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    height: 44px;
+    padding: 0 18px;
+    border: 0;
+    border-radius: 8px;
+    background: linear-gradient(90deg, var(--accent-primary), #4fe5ff);
+    color: #051019;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.result-panel .overlay-action {
+    background: linear-gradient(90deg, var(--accent-warm), #ffd166);
+    color: #201806;
+}
+
+.damage-number,
+.cutin-banner,
+.impact-ring,
+.particle,
+.slash-effect,
+.flash-overlay {
+    position: absolute;
+    pointer-events: none;
+}
+
+.damage-number {
+    font-weight: 800;
+    text-shadow: 0 0 12px rgba(0, 0, 0, 0.45);
+    white-space: nowrap;
+}
+
+.impact-ring {
+    width: 20px;
+    height: 20px;
+    margin-left: -10px;
+    margin-top: -10px;
+    border-radius: 50%;
+    border: 2px solid currentColor;
+}
+
+.particle {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+}
+
+.slash-effect {
+    width: 180px;
+    height: 20px;
+    margin-left: -90px;
+    margin-top: -10px;
+    border-radius: 999px;
+    transform-origin: center;
+    opacity: 0.88;
+}
+
+.cutin-banner {
+    top: 10%;
+    width: min(380px, calc(100vw - 48px));
+    min-height: 72px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 0 18px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: var(--shadow-strong);
+}
+
+.cutin-left {
+    left: 18px;
+}
+
+.cutin-right {
+    right: 18px;
+}
+
+.cutin-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.12);
+    font-size: 22px;
+}
+
+.cutin-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.cutin-title {
+    font-size: 18px;
+    font-weight: 700;
+}
+
+.cutin-subtitle {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.78);
+}
+
+@media (max-width: 1100px) {
+    body {
+        overflow: auto;
+    }
+
+    #battle-stage {
+        min-height: 100svh;
+        grid-template-rows: auto auto auto auto;
+    }
+
+    .battle-field {
+        grid-template-columns: 1fr;
+    }
+
+    #player-area,
+    #enemy-area {
+        flex-direction: column;
+    }
+
+    #enemy-area {
+        flex-direction: column;
+    }
+
+    .combat-hud {
+        width: 100%;
+    }
+
+    .sprite-frame,
+    .enemy-frame {
+        width: min(100%, 340px);
+    }
+
+    .skill-bar {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .log-shell {
+        position: relative;
+        top: auto;
+        right: auto;
+        width: auto;
+        padding: 0 18px 18px;
+    }
+}
+
+@media (max-width: 680px) {
+    .status-strip,
+    .skill-band-header {
+        flex-wrap: wrap;
+    }
+
+    .status-strip {
+        padding-right: 14px;
+        padding-left: 14px;
+    }
+
+    .battle-field {
+        padding-right: 14px;
+        padding-left: 14px;
+    }
+
+    #skill-band {
+        padding-right: 14px;
+        padding-left: 14px;
+    }
+
+    .skill-bar {
+        grid-template-columns: 1fr;
+    }
+
+    .skill-button {
+        min-height: 102px;
+    }
+
+    .overlay-panel {
+        padding: 22px;
+    }
+
+    .overlay-panel h1,
+    .overlay-panel h2 {
+        font-size: 26px;
+    }
+}

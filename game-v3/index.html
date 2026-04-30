@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spirit Weaver - Realtime Battle Prototype</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div id="battle-stage">
+        <div id="battle-bg" aria-hidden="true"></div>
+        <div id="vfx-layer" aria-hidden="true"></div>
+
+        <header class="status-strip" aria-label="战斗状态">
+            <div class="status-cluster">
+                <span class="status-label">Spirit Weaver</span>
+                <span class="status-value" id="battle-mode-label">Realtime Prototype</span>
+            </div>
+            <div class="status-cluster">
+                <span class="status-label">职业</span>
+                <span class="status-value" id="player-class-label">气宗</span>
+            </div>
+            <div class="status-cluster">
+                <span class="status-label">状态</span>
+                <span class="status-value" id="battle-status-text">待命</span>
+            </div>
+            <button type="button" class="hud-button" id="restart-battle-button" title="重新开始战斗">
+                <span aria-hidden="true">↻</span>
+            </button>
+        </header>
+
+        <main class="battle-field">
+            <section id="player-area" aria-label="玩家区域">
+                <div id="player-sprite" class="sprite-shell">
+                    <div class="sprite-aura player-aura"></div>
+                    <div class="sprite-frame">
+                        <img
+                            id="player-portrait"
+                            class="sprite-image"
+                            src="../game-v2/assets/art/portraits/portrait_qi_street_v3.png"
+                            alt="气宗立绘"
+                            draggable="false"
+                        >
+                    </div>
+                    <div id="player-state-badge" class="state-badge">待命</div>
+                </div>
+
+                <div id="player-hud" class="combat-hud">
+                    <div class="hud-title-row">
+                        <div>
+                            <div class="combatant-name">气宗</div>
+                            <div class="combatant-subtitle">蓄势爆发 / 近战</div>
+                        </div>
+                        <div class="pill pill-player">玩家</div>
+                    </div>
+
+                    <div class="bar-block">
+                        <div class="bar-meta">
+                            <span>HP</span>
+                            <span id="player-hp-text">100 / 100</span>
+                        </div>
+                        <div class="bar-track hp-track">
+                            <div class="bar-fill hp-fill" id="player-hp-bar"></div>
+                            <div class="bar-glow player-glow"></div>
+                        </div>
+                    </div>
+
+                    <div class="resource-block">
+                        <div class="bar-meta">
+                            <span>气</span>
+                            <span id="player-resource-text">10.0 / 10</span>
+                        </div>
+                        <div class="resource-grid" id="player-resource"></div>
+                    </div>
+
+                    <div class="buff-row" id="player-buffs" aria-label="玩家状态"></div>
+                </div>
+            </section>
+
+            <section id="enemy-area" aria-label="敌人区域">
+                <div id="enemy-hud" class="combat-hud enemy-panel">
+                    <div class="hud-title-row">
+                        <div>
+                            <div class="combatant-name" id="enemy-name-text">恶鬼</div>
+                            <div class="combatant-subtitle" id="enemy-subtitle-text">重型近战 / 压迫节奏</div>
+                        </div>
+                        <div class="pill pill-enemy">敌人</div>
+                    </div>
+
+                    <div class="bar-block">
+                        <div class="bar-meta">
+                            <span>HP</span>
+                            <span id="enemy-hp-text">200 / 200</span>
+                        </div>
+                        <div class="bar-track hp-track enemy-track">
+                            <div class="bar-fill enemy-fill" id="enemy-hp-bar"></div>
+                            <div class="bar-glow enemy-glow"></div>
+                        </div>
+                    </div>
+
+                    <div id="enemy-telegraph" class="telegraph hidden" aria-live="polite">
+                        <div class="telegraph-header">
+                            <span class="telegraph-label">喊招</span>
+                            <span class="telegraph-text" id="enemy-telegraph-text"></span>
+                        </div>
+                        <div class="telegraph-bar">
+                            <div class="telegraph-fill" id="enemy-telegraph-fill"></div>
+                        </div>
+                    </div>
+
+                    <div class="buff-row enemy-buffs" id="enemy-buffs" aria-label="敌人状态"></div>
+                </div>
+
+                <div id="enemy-sprite" class="sprite-shell enemy-shell">
+                    <div class="sprite-aura enemy-aura"></div>
+                    <div class="sprite-frame enemy-frame">
+                        <img
+                            id="enemy-portrait"
+                            class="sprite-image enemy-image"
+                            src="../game-v2/assets/art/enemies/demon_frames/frame_00.png"
+                            alt="恶鬼立绘"
+                            draggable="false"
+                        >
+                    </div>
+                    <div id="enemy-state-badge" class="state-badge enemy-state">待机</div>
+                </div>
+            </section>
+        </main>
+
+        <section id="skill-band" aria-label="技能栏">
+            <div class="skill-band-header">
+                <div class="status-cluster">
+                    <span class="status-label">输入</span>
+                    <span class="status-value">键盘 1 2 3 4 / 点击技能</span>
+                </div>
+                <div class="status-cluster">
+                    <span class="status-label">说明</span>
+                    <span class="status-value" id="skill-band-status">不在施法中时可立即出招</span>
+                </div>
+            </div>
+            <div id="skill-bar" class="skill-bar"></div>
+        </section>
+
+        <aside class="log-shell" aria-label="战斗日志">
+            <button type="button" class="log-toggle" id="log-toggle">
+                <span>战斗日志</span>
+                <span aria-hidden="true" id="log-toggle-icon">▾</span>
+            </button>
+            <div id="log-panel" class="log-panel"></div>
+        </aside>
+
+        <div id="start-overlay" class="overlay visible">
+            <div class="overlay-panel">
+                <div class="overlay-kicker">game-v3</div>
+                <h1>即时制战斗原型</h1>
+                <p>气宗 vs 恶鬼。保持节奏，抓住敌人喊招前的反应窗口。</p>
+                <button type="button" class="overlay-action" id="start-button">
+                    <span aria-hidden="true">▶</span>
+                    <span>开始战斗</span>
+                </button>
+            </div>
+        </div>
+
+        <div id="result-overlay" class="overlay hidden">
+            <div class="overlay-panel result-panel">
+                <div class="overlay-kicker" id="result-kicker">战斗结束</div>
+                <h2 id="result-title">胜利</h2>
+                <p id="result-summary">再来一轮，看看能不能把节奏卡得更漂亮。</p>
+                <button type="button" class="overlay-action" id="retry-button">
+                    <span aria-hidden="true">↻</span>
+                    <span>重新开始</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/core/events.js"></script>
+    <script src="js/core/time.js"></script>
+    <script src="js/core/game-loop.js"></script>
+
+    <script src="js/battle/buff-system.js"></script>
+    <script src="js/battle/damage.js"></script>
+    <script src="js/battle/skill-system.js"></script>
+
+    <script src="js/entities/character.js"></script>
+    <script src="js/data/qi-skills.js"></script>
+    <script src="js/entities/qi-master.js"></script>
+    <script src="js/data/enemy-data.js"></script>
+    <script src="js/entities/enemy.js"></script>
+
+    <script src="js/battle/battle-manager.js"></script>
+
+    <script src="js/ui/vfx.js"></script>
+    <script src="js/ui/skill-bar.js"></script>
+    <script src="js/ui/enemy-hud.js"></script>
+    <script src="js/ui/battle-ui.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            BattleUI.init();
+            BattleManager.init();
+        });
+    </script>
+</body>
+</html>
